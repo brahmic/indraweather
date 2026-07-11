@@ -260,7 +260,7 @@ export class MaxChannel implements DeliveryChannel {
       const uploaded = await this.api.uploadImage(attachment.data);
       await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
     } catch (error) {
-      this.logger.warn({ error }, "MAX satellite diagnostic request failed");
+      this.logger.warn({ err: error }, "MAX satellite diagnostic request failed");
       await this.api.sendMessage(userId, failure);
     }
   }

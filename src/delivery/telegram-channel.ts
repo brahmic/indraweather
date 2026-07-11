@@ -188,7 +188,7 @@ export class TelegramChannel implements DeliveryChannel {
       const attachment = await getAttachment();
       await this.bot.api.sendPhoto(chatId, new InputFile(attachment.data, attachment.filename), { caption: attachment.caption });
     } catch (error) {
-      this.logger.warn({ error }, "Satellite diagnostic request failed");
+      this.logger.warn({ err: error }, "Satellite diagnostic request failed");
       await this.bot.api.sendMessage(chatId, failure);
     }
   }

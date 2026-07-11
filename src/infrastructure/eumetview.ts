@@ -23,6 +23,7 @@ export interface SatelliteLayer {
   name: string;
   mode: "day" | "night";
   style?: string;
+  transparent?: boolean;
 }
 
 export interface EumetviewOptions {
@@ -57,11 +58,12 @@ export class EumetviewClient {
 
   async getLatestMetadata(layer: SatelliteLayer): Promise<{ observedAt: Date }> {
     const url = new URL(this.options.baseUrl);
-    url.search = new URLSearchParams({
+    const parameters = new URLSearchParams({
       service: "WMS",
       version: "1.3.0",
       request: "GetCapabilities",
     }).toString();
+    url.search = parameters;
     const xml = await fetchText(url, this.requestOptions());
     const $ = cheerio.load(xml, { xmlMode: true });
     const matchingLayer = $("Layer").filter((_, element) =>
@@ -80,7 +82,7 @@ export class EumetviewClient {
     observedAt: Date,
   ): Promise<{ data: Uint8Array; contentType: "image/png" }> {
     const url = new URL(this.options.baseUrl);
-    url.search = new URLSearchParams({
+    const parameters = new URLSearchParams({
       service: "WMS",
       version: "1.1.1",
       request: "GetMap",
@@ -92,7 +94,9 @@ export class EumetviewClient {
       height: String(this.options.height),
       format: "image/png",
       time: observedAt.toISOString(),
-    }).toString();
+    });
+    if (layer.transparent) parameters.set("transparent", "true");
+    url.search = parameters.toString();
     const result = await fetchBinary(url, this.requestOptions(), this.options.maxImageBytes);
     if (result.contentType !== "image/png") {
       throw new Error(`Unexpected EUMETView content type: ${result.contentType}`);

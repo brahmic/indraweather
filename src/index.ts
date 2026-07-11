@@ -2,13 +2,17 @@ import "dotenv/config";
 import { BulletinService } from "./application/bulletin-service.js";
 import { CoastlineOverlayService } from "./application/coastline-overlay-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
+import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { PublicationService } from "./application/publication-service.js";
 import { SatelliteImageService } from "./application/satellite-image-service.js";
+import { SentinelPassService } from "./application/sentinel-pass-service.js";
 import { loadConfig, loadControlPoints } from "./config.js";
 import type { DeliveryChannel } from "./delivery/types.js";
 import { startHealthServer } from "./health.js";
 import { Database } from "./infrastructure/database.js";
 import { EumetviewClient } from "./infrastructure/eumetview.js";
+import { EumetsatCatalogClient } from "./infrastructure/eumetsat-catalog.js";
+import { EumetsatTleClient } from "./infrastructure/eumetsat-tle.js";
 import { KolgimetClient } from "./infrastructure/kolgimet.js";
 import { OpenMeteoClient } from "./infrastructure/open-meteo.js";
 import { StormglassClient } from "./infrastructure/stormglass.js";
@@ -59,6 +63,54 @@ const satellite = config.satellite.enabled
     },
   )
   : null;
+const [detailWest, detailSouth, detailEast, detailNorth] = config.detailedSatellite.bbox;
+const detailedSatellite = config.detailedSatellite.enabled
+  ? new DetailedSatelliteService(
+    new EumetsatCatalogClient({
+      baseUrl: config.detailedSatellite.catalogUrl,
+      collectionId: config.detailedSatellite.collectionId,
+      bbox: config.detailedSatellite.bbox,
+      timeoutMs: config.weatherTimeoutMs,
+      retries: config.weatherRetryCount,
+    }),
+    new EumetviewClient({
+      baseUrl: config.satellite.wmsUrl,
+      wfsUrl: config.satellite.wfsUrl,
+      bbox: config.detailedSatellite.bbox,
+      width: config.detailedSatellite.width,
+      height: config.detailedSatellite.height,
+      timeoutMs: config.weatherTimeoutMs,
+      retries: config.weatherRetryCount,
+      maxImageBytes: config.satellite.maxImageBytes,
+    }),
+    new CoastlineOverlayService({
+      bbox: config.detailedSatellite.bbox,
+      width: config.detailedSatellite.width,
+      height: config.detailedSatellite.height,
+      maxImageBytes: config.satellite.maxImageBytes,
+    }),
+    new SentinelPassService(
+      new EumetsatTleClient({
+        s3aUrl: config.detailedSatellite.tleS3aUrl,
+        s3bUrl: config.detailedSatellite.tleS3bUrl,
+        timeoutMs: config.weatherTimeoutMs,
+        retries: config.weatherRetryCount,
+      }),
+      {
+        latitude: (detailSouth + detailNorth) / 2,
+        longitude: (detailWest + detailEast) / 2,
+        maxGroundTrackDistanceKm: config.detailedSatellite.passRadiusKm,
+      },
+    ),
+    {
+      maxAgeHours: config.detailedSatellite.maxAgeHours,
+      minCoveragePercent: config.detailedSatellite.minCoveragePercent,
+      cacheMinutes: config.detailedSatellite.cacheMinutes,
+      maxImageBytes: config.satellite.maxImageBytes,
+      timeZone: config.timeZone,
+    },
+  )
+  : null;
 
 let scheduler: Scheduler;
 const bulletinService = new BulletinService(
@@ -74,6 +126,8 @@ const bulletinService = new BulletinService(
 const publicationService = new PublicationService(
   bulletinService,
   satellite,
+  detailedSatellite,
+  config.timeZone,
   logger,
 );
 const channels: DeliveryChannel[] = [];
@@ -103,6 +157,7 @@ await deliveryService.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");
 if (!satellite) logger.warn("Satellite image delivery is disabled");
+if (!detailedSatellite) logger.warn("Detailed satellite image delivery is disabled");
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutting down");

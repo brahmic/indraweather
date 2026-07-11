@@ -46,6 +46,29 @@ describe("EumetviewClient", () => {
     expect(imageUrl.searchParams.get("time")).toBe("2026-07-11T02:30:00.000Z");
   });
 
+  it("requests transparent no-data pixels for single Sentinel swaths", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request) => new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new EumetviewClient({
+      baseUrl: "https://example.test/wms",
+      wfsUrl: "https://example.test/wfs",
+      bbox: [31.4, 65.6, 35.8, 67.4],
+      width: 1000,
+      height: 1000,
+      timeoutMs: 1000,
+      retries: 0,
+      maxImageBytes: 1000,
+    });
+
+    await client.getImage({ name: "sentinel", mode: "day", transparent: true }, new Date());
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("transparent")).toBe("true");
+  });
+
   it("loads and normalizes WFS coastline GeoJSON", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request) => new Response(JSON.stringify({
       type: "FeatureCollection",

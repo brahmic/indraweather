@@ -37,6 +37,22 @@ const envSchema = z.object({
   SATELLITE_MAX_AGE_MINUTES: z.coerce.number().int().positive().default(90),
   SATELLITE_CACHE_MINUTES: z.coerce.number().int().positive().default(10),
   SATELLITE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(9_000_000),
+  DETAILED_SATELLITE_ENABLED: z.enum(["true", "false"]).default("true")
+    .transform((value) => value === "true"),
+  DETAILED_SATELLITE_BBOX: z.string().default("31.4,65.6,35.8,67.4"),
+  DETAILED_SATELLITE_WIDTH: z.coerce.number().int().min(320).max(2000).default(1000),
+  DETAILED_SATELLITE_HEIGHT: z.coerce.number().int().min(240).max(2000).default(1000),
+  DETAILED_SATELLITE_MAX_AGE_HOURS: z.coerce.number().positive().default(12),
+  DETAILED_SATELLITE_MIN_COVERAGE_PERCENT: z.coerce.number().min(1).max(100).default(70),
+  DETAILED_SATELLITE_CACHE_MINUTES: z.coerce.number().int().positive().default(30),
+  DETAILED_SATELLITE_PASS_RADIUS_KM: z.coerce.number().positive().default(450),
+  EUMETSAT_CATALOG_URL: z.url()
+    .default("https://api.eumetsat.int/data/search-products/1.0.0/os"),
+  EUMETSAT_SENTINEL_COLLECTION_ID: z.string().default("EO:EUM:DAT:0409"),
+  EUMETSAT_TLE_S3A_URL: z.url()
+    .default("https://service.eumetsat.int/tle/javascript/data_content_s3a.js"),
+  EUMETSAT_TLE_S3B_URL: z.url()
+    .default("https://service.eumetsat.int/tle/javascript/data_content_s3b.js"),
 });
 
 const pointSchema = z.object({
@@ -93,12 +109,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       enabled: parsed.SATELLITE_ENABLED,
       wmsUrl: parsed.SATELLITE_WMS_URL,
       wfsUrl: parsed.SATELLITE_WFS_URL,
-      bbox: parseBoundingBox(parsed.SATELLITE_BBOX),
+      bbox: parseBoundingBox(parsed.SATELLITE_BBOX, "SATELLITE_BBOX"),
       width: parsed.SATELLITE_WIDTH,
       height: parsed.SATELLITE_HEIGHT,
       maxAgeMinutes: parsed.SATELLITE_MAX_AGE_MINUTES,
       cacheMinutes: parsed.SATELLITE_CACHE_MINUTES,
       maxImageBytes: parsed.SATELLITE_MAX_IMAGE_BYTES,
+    },
+    detailedSatellite: {
+      enabled: parsed.DETAILED_SATELLITE_ENABLED,
+      bbox: parseBoundingBox(parsed.DETAILED_SATELLITE_BBOX, "DETAILED_SATELLITE_BBOX"),
+      width: parsed.DETAILED_SATELLITE_WIDTH,
+      height: parsed.DETAILED_SATELLITE_HEIGHT,
+      maxAgeHours: parsed.DETAILED_SATELLITE_MAX_AGE_HOURS,
+      minCoveragePercent: parsed.DETAILED_SATELLITE_MIN_COVERAGE_PERCENT,
+      cacheMinutes: parsed.DETAILED_SATELLITE_CACHE_MINUTES,
+      passRadiusKm: parsed.DETAILED_SATELLITE_PASS_RADIUS_KM,
+      catalogUrl: parsed.EUMETSAT_CATALOG_URL,
+      collectionId: parsed.EUMETSAT_SENTINEL_COLLECTION_ID,
+      tleS3aUrl: parsed.EUMETSAT_TLE_S3A_URL,
+      tleS3bUrl: parsed.EUMETSAT_TLE_S3B_URL,
     },
     thresholds: {
       windChangeMs: parsed.WIND_CHANGE_THRESHOLD_MS,
@@ -111,16 +141,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
-function parseBoundingBox(value: string): [number, number, number, number] {
+function parseBoundingBox(
+  value: string,
+  variable: "SATELLITE_BBOX" | "DETAILED_SATELLITE_BBOX",
+): [number, number, number, number] {
   const numbers = value.split(",").map((item) => Number(item.trim()));
   if (numbers.length !== 4 || numbers.some((item) => !Number.isFinite(item))) {
-    throw new Error("SATELLITE_BBOX must contain west,south,east,north");
+    throw new Error(`${variable} must contain west,south,east,north`);
   }
   const [west, south, east, north] = numbers;
   if (west === undefined || south === undefined || east === undefined || north === undefined
     || west >= east || south >= north
     || west < -180 || east > 180 || south < -90 || north > 90) {
-    throw new Error("SATELLITE_BBOX contains invalid coordinates");
+    throw new Error(`${variable} contains invalid coordinates`);
   }
   return [west, south, east, north];
 }

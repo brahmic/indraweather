@@ -8,6 +8,7 @@ export function formatPostHtml(
   return content.split("\n").map((line, index) => {
     if (!line) return "";
     if (includeTitle && index === 0) return `🌊 <b>${escapeHtml(line)}</b>`;
+    if (line === "Волна и вода") return `🌊 <b>${escapeHtml(line)}</b>`;
 
     const pointName = pointNames.find((name) => line === name || line.startsWith(`${name}:`));
     if (pointName) {

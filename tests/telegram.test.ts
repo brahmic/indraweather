@@ -68,6 +68,7 @@ describe("formatTelegramPost", () => {
 
     expect(formatted).toContain("📌 <b>Главное</b>");
     expect(formatted).toContain("📍 <b>Контрольные точки</b>");
+    expect(formatTelegramPost("Волна и вода", [])).toContain("🌊 <b>Волна и вода</b>");
     expect(formatted).toContain("  • <b>Ветер</b> 3–9 м/с");
     expect(formatted).toContain("  • <b>Осадки</b> 3,8 мм");
   });

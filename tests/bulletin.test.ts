@@ -74,6 +74,7 @@ describe("renderBulletin", () => {
     expect(result).toContain("11:00 МСК");
     expect(result).toContain("Ветер <сильный>");
     expect(result).toContain("Точка <1>");
+    expect(result).toContain("Сводный коридор ECMWF/GFS (границы моделей, не среднее)");
     expect(result).not.toContain("<b>");
   });
 });

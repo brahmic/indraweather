@@ -7,6 +7,7 @@ import type {
 } from "./detailed-satellite-service.js";
 import type { BulletinRecord } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
+import { renderModelDetails } from "../domain/model-details.js";
 
 export class PublicationService {
   constructor(
@@ -24,6 +25,11 @@ export class PublicationService {
   async run(options: RunBulletinOptions): Promise<Publication | null> {
     const bulletin = await this.bulletins.run(options);
     return bulletin ? this.create(bulletin) : null;
+  }
+
+  async getFreshDetails(): Promise<string> {
+    const bulletin = await this.bulletins.getFreshOrRun();
+    return renderModelDetails(bulletin.summary, this.timeZone);
   }
 
   private async create(bulletin: BulletinRecord): Promise<Publication> {

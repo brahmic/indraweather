@@ -28,6 +28,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "start", description: "Подписаться на бюллетени" },
       { command: "stop", description: "Отключить уведомления" },
       { command: "weather", description: "Актуальный бюллетень" },
+      { command: "details", description: "ECMWF и GFS отдельно" },
       { command: "points", description: "Контрольные точки" },
       { command: "status", description: "Статус обновления" },
     ]);
@@ -72,6 +73,16 @@ export class TelegramChannel implements DeliveryChannel {
       } catch (error) {
         this.logger.error({ error }, "Manual bulletin failed");
         await ctx.reply("Не удалось сформировать бюллетень: погодные данные временно недоступны.");
+      }
+    });
+
+    this.bot.command("details", async (ctx) => {
+      await ctx.replyWithChatAction("typing");
+      try {
+        await this.sendContent(String(ctx.chat.id), await this.publications.getFreshDetails());
+      } catch (error) {
+        this.logger.error({ error }, "Detailed model bulletin failed");
+        await ctx.reply("Не удалось сформировать детализацию: погодные данные временно недоступны.");
       }
     });
 

@@ -42,6 +42,7 @@ export function renderBulletin(input: BulletinInput): string {
   }
 
   lines.push("", `Главное: ${renderMainChange(input.summary, input.timeZone)}`);
+  lines.push("", "Сводный коридор ECMWF/GFS (границы моделей, не среднее):");
 
   for (const point of input.summary.pointSummaries) {
     const gust = point.maxGustMs === null ? "нет данных" : `до ${round(point.maxGustMs)} м/с`;

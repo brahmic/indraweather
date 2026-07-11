@@ -25,11 +25,16 @@ export class SatelliteImageService {
   }
 
   async getLatestInfrared(now = new Date()): Promise<ImageAttachment> {
-    return this.getLatestForLayer(this.client.nightLayer, now);
+    return this.getLatestForLayer(this.client.nightLayer, now, false);
   }
 
-  private async getLatestForLayer(layer: SatelliteLayer, now: Date): Promise<ImageAttachment> {
-    const cached = this.cached.get(layer.name);
+  private async getLatestForLayer(
+    layer: SatelliteLayer,
+    now: Date,
+    includeMapContext = true,
+  ): Promise<ImageAttachment> {
+    const cacheKey = `${layer.name}:${includeMapContext ? "context" : "coastline"}`;
+    const cached = this.cached.get(cacheKey);
     if (cached && now.getTime() - cached.cachedAt.getTime() < this.options.cacheMinutes * 60_000) {
       return cached.attachment;
     }
@@ -42,6 +47,7 @@ export class SatelliteImageService {
     const data = await this.coastlineOverlay.apply(
       image.data,
       await this.client.getCoastline(),
+      { includeMapContext },
     );
     const attachment: ImageAttachment = {
       kind: "image",
@@ -52,7 +58,7 @@ export class SatelliteImageService {
       source: "EUMETSAT EUMETView",
       observedAt: metadata.observedAt,
     };
-    this.cached.set(layer.name, { attachment, cachedAt: now });
+    this.cached.set(cacheKey, { attachment, cachedAt: now });
     return attachment;
   }
 

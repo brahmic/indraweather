@@ -47,6 +47,12 @@ const stormglass = config.stormglassApiKey
   ? new StormglassClient(config.stormglassApiKey, config.weatherTimeoutMs, config.weatherRetryCount)
   : null;
 const kolgimet = new KolgimetClient(config.weatherTimeoutMs, config.weatherRetryCount);
+const satelliteOverlay = new CoastlineOverlayService({
+  bbox: config.satellite.bbox,
+  width: config.satellite.width,
+  height: config.satellite.height,
+  maxImageBytes: config.satellite.maxImageBytes,
+});
 const satellite = config.satellite.enabled
   ? new SatelliteImageService(
     new EumetviewClient({
@@ -59,12 +65,7 @@ const satellite = config.satellite.enabled
       retries: config.weatherRetryCount,
       maxImageBytes: config.satellite.maxImageBytes,
     }),
-    new CoastlineOverlayService({
-      bbox: config.satellite.bbox,
-      width: config.satellite.width,
-      height: config.satellite.height,
-      maxImageBytes: config.satellite.maxImageBytes,
-    }),
+    satelliteOverlay,
     {
       latitude: 66,
       longitude: 33,
@@ -79,6 +80,7 @@ const satelliteAnimation = satellite && config.satelliteAnimation.enabled
   ? new SatelliteAnimationService(
     database,
     satellite,
+    satelliteOverlay,
     new SatelliteAnimationStore(config.satelliteAnimation.directory),
     {
       intervalMinutes: config.satelliteAnimation.intervalMinutes,

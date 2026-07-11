@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CoastlineOverlayService } from "../src/application/coastline-overlay-service.js";
 
 describe("CoastlineOverlayService", () => {
-  it("projects vector coordinates and draws a contrasting double stroke", async () => {
+  it("projects the coast and adds settlement context", async () => {
     const input = await sharp({
       create: {
         width: 100,
@@ -22,9 +22,11 @@ describe("CoastlineOverlayService", () => {
     const output = await service.apply(input, [[[30, 64], [36, 68]]]);
     const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
     const center = (40 * info.width + 50) * info.channels;
+    const kemiMarker = (60 * info.width + 79) * info.channels;
 
     expect(info.width).toBe(100);
     expect(info.height).toBe(80);
     expect([...data.subarray(center, center + 3)]).not.toEqual([138, 160, 170]);
+    expect([...data.subarray(kemiMarker, kemiMarker + 3)]).not.toEqual([138, 160, 170]);
   });
 });

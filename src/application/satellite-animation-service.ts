@@ -13,6 +13,7 @@ import type { Logger } from "../logger.js";
 
 const execFileAsync = promisify(execFile);
 const FRAME_DURATION_SECONDS = 0.15;
+const LAST_FRAME_HOLD_SECONDS = 1.2;
 
 export interface SatelliteAnimationOptions {
   intervalMinutes: number;
@@ -32,6 +33,10 @@ interface AnimationEncoder {
   encode(framePaths: string[], outputPath: string): Promise<void>;
 }
 
+interface MapContextOverlay {
+  applyContext(image: Uint8Array): Promise<Uint8Array>;
+}
+
 export class SatelliteAnimationService {
   private worker: Promise<void> | null = null;
   private queueTimer: NodeJS.Timeout | null = null;
@@ -41,6 +46,7 @@ export class SatelliteAnimationService {
   constructor(
     private readonly database: Database,
     private readonly satellite: InfraredImageSource,
+    private readonly mapContext: MapContextOverlay,
     private readonly store: SatelliteAnimationStore,
     private readonly options: SatelliteAnimationOptions,
     private readonly logger: Logger,
@@ -138,7 +144,7 @@ export class SatelliteAnimationService {
     const first = ready[0];
     const last = ready.at(-1);
     if (!first || !last) return null;
-    const filename = `animation-v3-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
+    const filename = `animation-v4-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
     const outputPath = this.store.path(filename);
     if (!await fileExists(outputPath)) {
       const temporaryPath = this.store.path(`.${filename}.tmp.mp4`);
@@ -186,7 +192,8 @@ export class SatelliteAnimationService {
       const filename = filenames[index];
       if (!filename) throw new Error("Satellite animation frame filename is missing");
       const source = await readFile(this.store.path(frame.filename));
-      await this.store.write(filename, await stampFrame(source, frame.observedAt, this.options.timeZone));
+      const stamped = await stampFrame(source, frame.observedAt, this.options.timeZone);
+      await this.store.write(filename, await this.mapContext.applyContext(stamped));
     }));
     return { filenames, paths: filenames.map((filename) => this.store.path(filename)) };
   }
@@ -260,7 +267,7 @@ export class FfmpegAnimationEncoder implements AnimationEncoder {
     const listPath = `${outputPath}.txt`;
     const lines = framePaths.flatMap((path, index) => [
       `file '${path.replaceAll("'", "'\\''")}'`,
-      ...(index < framePaths.length - 1 ? [`duration ${FRAME_DURATION_SECONDS}`] : []),
+      `duration ${index === framePaths.length - 1 ? LAST_FRAME_HOLD_SECONDS : FRAME_DURATION_SECONDS}`,
     ]);
     lines.push(`file '${framePaths.at(-1)?.replaceAll("'", "'\\''")}'`);
     await writeFile(listPath, `${lines.join("\n")}\n`, "utf8");

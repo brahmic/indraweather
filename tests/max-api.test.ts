@@ -14,6 +14,8 @@ describe("MaxApiClient", () => {
       let response: unknown;
       if (url.pathname === "/me") {
         response = { user_id: 7, name: "Weather", username: "weather_bot", is_bot: true };
+      } else if (url.pathname === "/me/commands") {
+        response = { commands: [] };
       } else {
         response = { success: true };
       }

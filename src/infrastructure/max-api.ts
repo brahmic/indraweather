@@ -4,6 +4,9 @@ import { z } from "zod";
 export const MAX_API_BASE_URL = "https://platform-api2.max.ru";
 
 const actionSchema = z.object({ success: z.boolean(), message: z.string().optional() });
+const commandsSchema = z.object({
+  commands: z.array(z.object({ name: z.string(), description: z.string().nullable().optional() })),
+});
 const botInfoSchema = z.object({
   name: z.string(),
   username: z.string().nullable().optional(),
@@ -39,7 +42,7 @@ export class MaxApiClient {
 
   async initialize(webhookUrl: string, webhookSecret: string): Promise<string> {
     const info = botInfoSchema.parse(await this.request("GET", "/me"));
-    assertAction(actionSchema.parse(await this.request("PATCH", "/me/commands", {
+    commandsSchema.parse(await this.request("PATCH", "/me/commands", {
       commands: [
         { name: "start", description: "Подписаться на бюллетени" },
         { name: "stop", description: "Отключить уведомления" },
@@ -48,7 +51,7 @@ export class MaxApiClient {
         { name: "points", description: "Контрольные точки" },
         { name: "status", description: "Статус обновления" },
       ],
-    })));
+    }));
     await this.ensureWebhook(webhookUrl, webhookSecret);
     return info.username ?? info.name;
   }

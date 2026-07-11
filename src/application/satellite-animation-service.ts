@@ -207,7 +207,7 @@ async function stampFrame(data: Uint8Array, observedAt: Date, timeZone: string):
   const label = `EUMETSAT IR · ${time} МСК`;
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="12" y="${height - 48}" width="300" height="34" rx="3" fill="#101820" fill-opacity="0.78"/>
-    <text x="24" y="${height - 25}" fill="white" font-family="sans-serif" font-size="18">${label}</text>
+    <text x="24" y="${height - 25}" fill="white" font-family="Noto Sans, sans-serif" font-size="18">${label}</text>
   </svg>`;
   return new Uint8Array(await image.composite([{ input: Buffer.from(svg) }]).png().toBuffer());
 }

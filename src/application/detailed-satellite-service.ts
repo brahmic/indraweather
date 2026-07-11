@@ -16,12 +16,18 @@ export type DetailedSatelliteSkipReason =
   | { code: "source-unavailable" };
 
 export type DetailedSatelliteResult =
-  | { status: "available"; attachment: ImageAttachment; coveragePercent: number }
+  | {
+    status: "available";
+    attachment: ImageAttachment;
+    coveragePercent: number;
+    partial: { preferredCoveragePercent: number; nextPassAt: Date | null } | null;
+  }
   | { status: "skipped"; reason: DetailedSatelliteSkipReason; nextPassAt: Date | null };
 
 export interface DetailedSatelliteOptions {
   maxAgeHours: number;
   minCoveragePercent: number;
+  preferredCoveragePercent: number;
   cacheMinutes: number;
   maxImageBytes: number;
   timeZone: string;
@@ -84,6 +90,12 @@ export class DetailedSatelliteService {
           status: "available",
           coveragePercent,
           attachment: await this.attachment(product, image.data, coveragePercent),
+          partial: coveragePercent < this.options.preferredCoveragePercent
+            ? {
+              preferredCoveragePercent: this.options.preferredCoveragePercent,
+              nextPassAt: await this.passes.nextPass(now),
+            }
+            : null,
         };
       } catch {
         imageErrors += 1;

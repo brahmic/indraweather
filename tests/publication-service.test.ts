@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatDetailedSatellitePartial,
   formatDetailedSatelliteSkip,
   PublicationService,
 } from "../src/application/publication-service.js";
@@ -32,6 +33,23 @@ describe("formatDetailedSatelliteSkip", () => {
       nextPassAt: null,
     }, "Europe/Moscow");
     expect(text).toContain("последнему снимку 19 ч при допустимых 12 ч");
+  });
+});
+
+describe("formatDetailedSatellitePartial", () => {
+  it("explains the incomplete coverage and the next expected pass", () => {
+    const text = formatDetailedSatellitePartial({
+      status: "available",
+      coveragePercent: 28,
+      attachment: {} as never,
+      partial: {
+        preferredCoveragePercent: 70,
+        nextPassAt: new Date("2026-07-11T18:30:00Z"),
+      },
+    }, "Europe/Moscow");
+    expect(text).toContain("данные есть только для части залива");
+    expect(text).toContain("покрытие 28% при желательном 70%");
+    expect(text).toContain("11.07, 21:30 МСК");
   });
 });
 

@@ -58,6 +58,7 @@ describe("loadConfig", () => {
       DETAILED_SATELLITE_BBOX: "31.4,65.6,35.8,67.4",
       DETAILED_SATELLITE_MAX_AGE_HOURS: "8",
       DETAILED_SATELLITE_MIN_COVERAGE_PERCENT: "75",
+      DETAILED_SATELLITE_PREFERRED_COVERAGE_PERCENT: "75",
     });
     expect(config.detailedSatellite.bbox).toEqual([31.4, 65.6, 35.8, 67.4]);
     expect(config.detailedSatellite.maxAgeHours).toBe(8);

@@ -125,6 +125,7 @@ const detailedSatellite = config.detailedSatellite.enabled
     {
       maxAgeHours: config.detailedSatellite.maxAgeHours,
       minCoveragePercent: config.detailedSatellite.minCoveragePercent,
+      preferredCoveragePercent: config.detailedSatellite.preferredCoveragePercent,
       cacheMinutes: config.detailedSatellite.cacheMinutes,
       maxImageBytes: config.satellite.maxImageBytes,
       timeZone: config.timeZone,

@@ -56,6 +56,7 @@ export class PublicationService {
       const detail = await this.detailedSatellite.getLatest();
       if (detail.status === "available") {
         attachments.push(detail.attachment);
+        if (detail.partial) text += `\n\n${formatDetailedSatellitePartial(detail, this.timeZone)}`;
       } else {
         if (detail.reason.code === "source-unavailable") {
           this.logger.warn(
@@ -73,6 +74,18 @@ export class PublicationService {
       attachments,
     };
   }
+}
+
+export function formatDetailedSatellitePartial(
+  result: Extract<DetailedSatelliteResult, { status: "available" }>,
+  timeZone: string,
+): string {
+  const partial = result.partial;
+  if (!partial) return "";
+  const nextPass = partial.nextPassAt
+    ? ` Расчётный следующий дневной пролёт: ${formatLocalTime(partial.nextPassAt, timeZone)} МСК.`
+    : " Время следующего пролёта определить не удалось.";
+  return `Детальный снимок неполный: данные есть только для части залива, покрытие ${Math.round(result.coveragePercent)}% при желательном ${Math.round(partial.preferredCoveragePercent)}%.${nextPass}`;
 }
 
 export function formatDetailedSatelliteSkip(

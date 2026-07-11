@@ -53,7 +53,8 @@ const envSchema = z.object({
   DETAILED_SATELLITE_WIDTH: z.coerce.number().int().min(320).max(2000).default(1000),
   DETAILED_SATELLITE_HEIGHT: z.coerce.number().int().min(240).max(2000).default(1000),
   DETAILED_SATELLITE_MAX_AGE_HOURS: z.coerce.number().positive().default(12),
-  DETAILED_SATELLITE_MIN_COVERAGE_PERCENT: z.coerce.number().min(1).max(100).default(70),
+  DETAILED_SATELLITE_MIN_COVERAGE_PERCENT: z.coerce.number().min(1).max(100).default(20),
+  DETAILED_SATELLITE_PREFERRED_COVERAGE_PERCENT: z.coerce.number().min(1).max(100).default(70),
   DETAILED_SATELLITE_CACHE_MINUTES: z.coerce.number().int().positive().default(30),
   DETAILED_SATELLITE_PASS_RADIUS_KM: z.coerce.number().positive().default(450),
   EUMETSAT_CATALOG_URL: z.url()
@@ -101,6 +102,10 @@ export type AppConfig = ReturnType<typeof loadConfig>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   const parsed = envSchema.parse(env);
   assertTimeZone(parsed.APP_TIMEZONE);
+  if (parsed.DETAILED_SATELLITE_PREFERRED_COVERAGE_PERCENT
+    < parsed.DETAILED_SATELLITE_MIN_COVERAGE_PERCENT) {
+    throw new Error("DETAILED_SATELLITE_PREFERRED_COVERAGE_PERCENT must not be below the minimum");
+  }
 
   return {
     nodeEnv: parsed.NODE_ENV,
@@ -143,6 +148,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       height: parsed.DETAILED_SATELLITE_HEIGHT,
       maxAgeHours: parsed.DETAILED_SATELLITE_MAX_AGE_HOURS,
       minCoveragePercent: parsed.DETAILED_SATELLITE_MIN_COVERAGE_PERCENT,
+      preferredCoveragePercent: parsed.DETAILED_SATELLITE_PREFERRED_COVERAGE_PERCENT,
       cacheMinutes: parsed.DETAILED_SATELLITE_CACHE_MINUTES,
       passRadiusKm: parsed.DETAILED_SATELLITE_PASS_RADIUS_KM,
       catalogUrl: parsed.EUMETSAT_CATALOG_URL,

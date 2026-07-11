@@ -41,4 +41,26 @@ describe("MaxApiClient", () => {
       secret: "webhook-secret",
     });
   });
+
+  it("uploads media with its filename extension and returns the uploaded token", async () => {
+    const requests: Array<{ url: string; body: BodyInit | null | undefined }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, body: init?.body });
+      if (url.startsWith(MAX_API_BASE_URL)) {
+        return new Response(JSON.stringify({ url: "https://upload.max.test/image" }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ token: "image-token" }), {
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    const client = new MaxApiClient("secret", 1000);
+
+    await expect(client.uploadImage(new Uint8Array([1, 2, 3]), "satellite.png"))
+      .resolves.toEqual({ type: "image", payload: { token: "image-token" } });
+    const form = await new Response(requests[1]?.body).text();
+    expect(form).toContain('filename="satellite.png"');
+  });
 });

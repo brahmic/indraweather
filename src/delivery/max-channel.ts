@@ -46,8 +46,8 @@ type MaxWebhookUpdate = z.infer<typeof updateSchema>;
 
 interface MaxApi {
   initialize(webhookUrl: string, webhookSecret: string): Promise<string>;
-  uploadImage(data: Uint8Array): Promise<MaxMessageAttachment>;
-  uploadVideo(data: Uint8Array): Promise<MaxMessageAttachment>;
+  uploadImage(data: Uint8Array, filename: string): Promise<MaxMessageAttachment>;
+  uploadVideo(data: Uint8Array, filename: string): Promise<MaxMessageAttachment>;
   sendMessage(
     userId: number,
     text: string,
@@ -255,26 +255,40 @@ export class MaxChannel implements DeliveryChannel {
   }
 
   private async sendDiagnostic(userId: number, getAttachment: () => Promise<import("./types.js").ImageAttachment>, failure: string): Promise<void> {
+    let attachment: import("./types.js").ImageAttachment;
     try {
-      const attachment = await getAttachment();
-      const uploaded = await this.api.uploadImage(attachment.data);
-      await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
+      attachment = await getAttachment();
     } catch (error) {
       this.logger.warn({ err: error }, "MAX satellite diagnostic request failed");
       await this.api.sendMessage(userId, failure);
+      return;
+    }
+    try {
+      const uploaded = await this.api.uploadImage(attachment.data, attachment.filename);
+      await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
+    } catch (error) {
+      this.logger.warn({ err: error, filename: attachment.filename }, "MAX diagnostic delivery failed");
+      await this.api.sendMessage(userId, "Снимок собран, но MAX временно не принял файл. Повторите запрос позже.");
     }
   }
 
   private async prepareAttachments(publication: Publication): Promise<PreparedAttachment[]> {
     const attachments: PreparedAttachment[] = [];
     for (const attachment of publication.attachments) {
-      const uploaded = attachment.kind === "image"
-        ? await this.api.uploadImage(attachment.data)
-        : await this.api.uploadVideo(attachment.data);
-      attachments.push({
-        caption: attachment.caption,
-        attachment: uploaded,
-      });
+      try {
+        const uploaded = attachment.kind === "image"
+          ? await this.api.uploadImage(attachment.data, attachment.filename)
+          : await this.api.uploadVideo(attachment.data, attachment.filename);
+        attachments.push({
+          caption: attachment.caption,
+          attachment: uploaded,
+        });
+      } catch (error) {
+        this.logger.warn(
+          { err: error, kind: attachment.kind, filename: attachment.filename },
+          "MAX attachment upload failed",
+        );
+      }
     }
     return attachments;
   }

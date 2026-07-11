@@ -77,7 +77,7 @@ describe("MaxChannel", () => {
 
     await channel.broadcast(publication);
 
-    expect(api.uploadImage).toHaveBeenCalledOnce();
+    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "satellite.png");
     expect(database.markDelivery).toHaveBeenCalledTimes(2);
   });
 
@@ -105,8 +105,51 @@ describe("MaxChannel", () => {
 
     await channel.broadcast(publication);
 
-    expect(api.uploadVideo).toHaveBeenCalledOnce();
+    expect(api.uploadVideo).toHaveBeenCalledWith(expect.any(Uint8Array), "clouds.mp4");
     expect(database.markDelivery).toHaveBeenCalledTimes(2);
+  });
+
+  it("still sends the weather text when MAX rejects an attachment", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-weather",
+        attempts: 1,
+        payload: weatherUpdate(),
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    api.uploadImage.mockRejectedValueOnce(new Error("upload unavailable"));
+    const publication: Publication = {
+      id: "bulletin-1",
+      text: "weather",
+      attachments: [{
+        kind: "image",
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "image/png",
+        filename: "satellite.png",
+        caption: "Satellite",
+        source: "EUMETSAT",
+        observedAt: new Date(),
+      }],
+    };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      { getFreshOrRun: vi.fn(async () => publication) } as never,
+      [],
+      { timeZone: "Europe/Moscow" } as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-weather"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("weather"));
+    expect(api.editMessage).not.toHaveBeenCalled();
+    await channel.stop();
   });
 });
 
@@ -156,4 +199,16 @@ function apiStub() {
 
 function webhookSecret(token: string): string {
   return createHash("sha256").update("indra:max-webhook:v1\0").update(token).digest("hex");
+}
+
+function weatherUpdate() {
+  return {
+    update_type: "message_created",
+    timestamp: 1,
+    message: {
+      sender: { user_id: 42, is_bot: false },
+      recipient: { chat_id: 42, chat_type: "dialog" },
+      body: { mid: "message-1", text: "/weather" },
+    },
+  };
 }

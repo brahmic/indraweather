@@ -13,7 +13,7 @@ import type { Logger } from "../logger.js";
 
 const execFileAsync = promisify(execFile);
 const FRAME_DURATION_SECONDS = 0.15;
-const LAST_FRAME_HOLD_SECONDS = 1.2;
+const LAST_FRAME_HOLD_SECONDS = 2;
 
 export interface SatelliteAnimationOptions {
   intervalMinutes: number;
@@ -144,7 +144,7 @@ export class SatelliteAnimationService {
     const first = ready[0];
     const last = ready.at(-1);
     if (!first || !last) return null;
-    const filename = `animation-v4-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
+    const filename = `animation-v5-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
     const outputPath = this.store.path(filename);
     if (!await fileExists(outputPath)) {
       const temporaryPath = this.store.path(`.${filename}.tmp.mp4`);
@@ -192,14 +192,24 @@ export class SatelliteAnimationService {
       const filename = filenames[index];
       if (!filename) throw new Error("Satellite animation frame filename is missing");
       const source = await readFile(this.store.path(frame.filename));
-      const stamped = await stampFrame(source, frame.observedAt, this.options.timeZone);
+      const stamped = await stampFrame(
+        source,
+        frame.observedAt,
+        this.options.timeZone,
+        index === frames.length - 1,
+      );
       await this.store.write(filename, await this.mapContext.applyContext(stamped));
     }));
     return { filenames, paths: filenames.map((filename) => this.store.path(filename)) };
   }
 }
 
-async function stampFrame(data: Uint8Array, observedAt: Date, timeZone: string): Promise<Uint8Array> {
+async function stampFrame(
+  data: Uint8Array,
+  observedAt: Date,
+  timeZone: string,
+  isLatest: boolean,
+): Promise<Uint8Array> {
   const image = sharp(data);
   const metadata = await image.metadata();
   const width = metadata.width ?? 1000;
@@ -215,6 +225,10 @@ async function stampFrame(data: Uint8Array, observedAt: Date, timeZone: string):
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="12" y="${height - 48}" width="300" height="34" rx="3" fill="#101820" fill-opacity="0.78"/>
     <text x="24" y="${height - 25}" fill="white" font-family="Noto Sans, sans-serif" font-size="18">${label}</text>
+    ${isLatest ? `<g>
+      <rect x="12" y="12" width="166" height="34" rx="3" fill="#b71c1c" fill-opacity="0.94"/>
+      <text x="24" y="35" fill="white" font-family="Noto Sans, sans-serif" font-size="17" font-weight="700">АКТУАЛЬНЫЙ</text>
+    </g>` : ""}
   </svg>`;
   return new Uint8Array(await image.composite([{ input: Buffer.from(svg) }]).png().toBuffer());
 }

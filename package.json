@@ -16,7 +16,6 @@
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "@maxhub/max-bot-api": "^0.2.5",
     "cheerio": "^1.2.0",
     "croner": "^10.0.1",
     "dotenv": "^17.4.2",

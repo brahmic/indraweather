@@ -1,4 +1,3 @@
-import { Bot } from "@maxhub/max-bot-api";
 import { z } from "zod";
 
 export const MAX_API_BASE_URL = "https://platform-api2.max.ru";
@@ -14,6 +13,11 @@ const botInfoSchema = z.object({
 const messageSchema = z.object({
   message: z.object({ body: z.object({ mid: z.string() }) }),
 });
+const uploadEndpointSchema = z.object({
+  url: z.string().url(),
+  token: z.string().optional(),
+});
+const uploadResultSchema = z.object({ token: z.string().optional() }).passthrough();
 
 class MaxApiError extends Error {
   constructor(
@@ -31,14 +35,10 @@ export interface MaxMessageAttachment {
 }
 
 export class MaxApiClient {
-  private readonly bot: Bot;
-
   constructor(
     private readonly token: string,
     private readonly timeoutMs = 20_000,
-  ) {
-    this.bot = new Bot(token, { clientOptions: { baseUrl: MAX_API_BASE_URL } });
-  }
+  ) {}
 
   async initialize(webhookUrl: string, webhookSecret: string): Promise<string> {
     const info = botInfoSchema.parse(await this.request("GET", "/me"));
@@ -58,14 +58,12 @@ export class MaxApiClient {
     return info.username ?? info.name;
   }
 
-  async uploadImage(data: Uint8Array): Promise<MaxMessageAttachment> {
-    const attachment = await this.bot.api.uploadImage({ source: Buffer.from(data), timeout: 60_000 });
-    return attachment.toJson();
+  async uploadImage(data: Uint8Array, filename: string): Promise<MaxMessageAttachment> {
+    return this.uploadMedia("image", data, filename, 60_000);
   }
 
-  async uploadVideo(data: Uint8Array): Promise<MaxMessageAttachment> {
-    const attachment = await this.bot.api.uploadVideo({ source: Buffer.from(data), timeout: 120_000 });
-    return attachment.toJson();
+  async uploadVideo(data: Uint8Array, filename: string): Promise<MaxMessageAttachment> {
+    return this.uploadMedia("video", data, filename, 120_000);
   }
 
   async sendMessage(
@@ -152,6 +150,33 @@ export class MaxApiClient {
       }
     }
     throw lastError;
+  }
+
+  private async uploadMedia(
+    type: "image" | "video",
+    data: Uint8Array,
+    filename: string,
+    timeoutMs: number,
+  ): Promise<MaxMessageAttachment> {
+    const endpoint = uploadEndpointSchema.parse(await this.request("POST", "/uploads", undefined, { type }));
+    const form = new FormData();
+    const content = new Uint8Array(data);
+    form.append("data", new Blob([content.buffer]), filename);
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const result: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = z.object({ code: z.string(), message: z.string() }).safeParse(result);
+      throw error.success
+        ? new MaxApiError(response.status, error.data.code, error.data.message)
+        : new Error(`MAX ${type} upload returned ${response.status}: ${JSON.stringify(result)}`);
+    }
+    const token = endpoint.token ?? uploadResultSchema.parse(result).token;
+    if (!token) throw new Error(`MAX ${type} upload response has no attachment token`);
+    return { type, payload: { token } };
   }
 }
 

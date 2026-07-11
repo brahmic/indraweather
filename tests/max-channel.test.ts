@@ -80,6 +80,34 @@ describe("MaxChannel", () => {
     expect(api.uploadImage).toHaveBeenCalledOnce();
     expect(database.markDelivery).toHaveBeenCalledTimes(2);
   });
+
+  it("uploads one shared animation for every broadcast recipient", async () => {
+    const database = databaseStub();
+    database.getActiveRecipientIds.mockResolvedValue(["41", "42"]);
+    database.claimDelivery.mockResolvedValue(true);
+    const api = apiStub();
+    const channel = createChannel(database, api);
+    const publication: Publication = {
+      id: "bulletin-1",
+      text: "weather",
+      attachments: [{
+        kind: "animation",
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "video/mp4",
+        filename: "clouds.mp4",
+        caption: "Clouds",
+        source: "EUMETSAT",
+        startedAt: new Date(),
+        endedAt: new Date(),
+        frameCount: 3,
+      }],
+    };
+
+    await channel.broadcast(publication);
+
+    expect(api.uploadVideo).toHaveBeenCalledOnce();
+    expect(database.markDelivery).toHaveBeenCalledTimes(2);
+  });
 });
 
 function createChannel(database: ReturnType<typeof databaseStub>, api: ReturnType<typeof apiStub>) {
@@ -119,6 +147,7 @@ function apiStub() {
   return {
     initialize: vi.fn(async () => "weather_bot"),
     uploadImage: vi.fn(async () => ({ type: "image" as const, payload: { token: "image" } })),
+    uploadVideo: vi.fn(async () => ({ type: "video" as const, payload: { token: "video" } })),
     sendMessage: vi.fn(async () => `message-${message += 1}`),
     editMessage: vi.fn(async () => undefined),
     deleteMessage: vi.fn(async () => undefined),

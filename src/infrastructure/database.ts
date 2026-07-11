@@ -27,6 +27,18 @@ export interface MaxWebhookRecord {
   attempts: number;
 }
 
+export interface SatelliteCaptureJobRecord {
+  scheduledFor: Date;
+  attempts: number;
+}
+
+export interface SatelliteAnimationFrameRecord {
+  observedAt: Date;
+  filename: string;
+  byteSize: number;
+  source: string;
+}
+
 export class Database {
   private readonly pool: Pool;
 
@@ -400,6 +412,118 @@ export class Database {
           next_attempt_at = now() + ($3::integer * interval '1 second'), updated_at = now()
       WHERE fingerprint = $1
     `, [fingerprint, error.slice(0, 2000), retrySeconds]);
+  }
+
+  async enqueueSatelliteCaptureJob(scheduledFor: Date): Promise<boolean> {
+    const result = await this.pool.query(`
+      INSERT INTO satellite_capture_jobs (scheduled_for)
+      VALUES ($1)
+      ON CONFLICT (scheduled_for) DO NOTHING
+      RETURNING 1
+    `, [scheduledFor]);
+    return Boolean(result.rowCount);
+  }
+
+  async resetProcessingSatelliteCaptureJobs(): Promise<void> {
+    await this.pool.query(`
+      UPDATE satellite_capture_jobs
+      SET status = 'pending', next_attempt_at = now(), updated_at = now()
+      WHERE status = 'processing'
+    `);
+  }
+
+  async claimSatelliteCaptureJob(): Promise<SatelliteCaptureJobRecord | null> {
+    const result = await this.pool.query<{
+      scheduled_for: Date;
+      attempts: number;
+    }>(`
+      WITH candidate AS (
+        SELECT scheduled_for
+        FROM satellite_capture_jobs
+        WHERE status IN ('pending', 'failed')
+          AND attempts < 5
+          AND next_attempt_at <= now()
+        ORDER BY scheduled_for
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE satellite_capture_jobs AS job
+      SET status = 'processing', attempts = attempts + 1, updated_at = now()
+      FROM candidate
+      WHERE job.scheduled_for = candidate.scheduled_for
+      RETURNING job.scheduled_for, job.attempts
+    `);
+    const row = result.rows[0];
+    return row ? { scheduledFor: row.scheduled_for, attempts: row.attempts } : null;
+  }
+
+  async completeSatelliteCaptureJob(scheduledFor: Date): Promise<void> {
+    await this.pool.query(`
+      UPDATE satellite_capture_jobs
+      SET status = 'processed', processed_at = now(), last_error = NULL, updated_at = now()
+      WHERE scheduled_for = $1
+    `, [scheduledFor]);
+  }
+
+  async failSatelliteCaptureJob(scheduledFor: Date, error: string, attempts: number): Promise<void> {
+    const retrySeconds = Math.min(300, 15 * 2 ** Math.max(0, attempts - 1));
+    await this.pool.query(`
+      UPDATE satellite_capture_jobs
+      SET status = 'failed', last_error = $2,
+          next_attempt_at = now() + ($3::integer * interval '1 second'), updated_at = now()
+      WHERE scheduled_for = $1
+    `, [scheduledFor, error.slice(0, 2000), retrySeconds]);
+  }
+
+  async saveSatelliteAnimationFrame(
+    observedAt: Date,
+    filename: string,
+    byteSize: number,
+    source: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(`
+      INSERT INTO satellite_animation_frames (observed_at, filename, byte_size, source)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (observed_at) DO NOTHING
+      RETURNING 1
+    `, [observedAt, filename, byteSize, source]);
+    return Boolean(result.rowCount);
+  }
+
+  async getSatelliteAnimationFrames(since: Date): Promise<SatelliteAnimationFrameRecord[]> {
+    const result = await this.pool.query<{
+      observed_at: Date;
+      filename: string;
+      byte_size: number;
+      source: string;
+    }>(`
+      SELECT observed_at, filename, byte_size, source
+      FROM satellite_animation_frames
+      WHERE observed_at >= $1
+      ORDER BY observed_at
+    `, [since]);
+    return result.rows.map((row) => ({
+      observedAt: row.observed_at,
+      filename: row.filename,
+      byteSize: row.byte_size,
+      source: row.source,
+    }));
+  }
+
+  async removeExpiredSatelliteAnimationFrames(before: Date): Promise<string[]> {
+    const result = await this.pool.query<{ filename: string }>(`
+      DELETE FROM satellite_animation_frames
+      WHERE observed_at < $1
+      RETURNING filename
+    `, [before]);
+    return result.rows.map((row) => row.filename);
+  }
+
+  async removeExpiredSatelliteCaptureJobs(before: Date): Promise<void> {
+    await this.pool.query(`
+      DELETE FROM satellite_capture_jobs
+      WHERE scheduled_for < $1 AND status IN ('processed', 'failed')
+    `, [before]);
   }
 
   async markDelivery(

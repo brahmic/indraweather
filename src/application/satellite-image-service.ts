@@ -12,7 +12,7 @@ export interface SatelliteImageOptions {
 }
 
 export class SatelliteImageService {
-  private cached: { attachment: ImageAttachment; cachedAt: Date } | null = null;
+  private readonly cached = new Map<string, { attachment: ImageAttachment; cachedAt: Date }>();
 
   constructor(
     private readonly client: EumetviewClient,
@@ -21,12 +21,18 @@ export class SatelliteImageService {
   ) {}
 
   async getLatest(now = new Date()): Promise<ImageAttachment> {
-    if (this.cached && now.getTime() - this.cached.cachedAt.getTime()
-      < this.options.cacheMinutes * 60_000) {
-      return this.cached.attachment;
-    }
+    return this.getLatestForLayer(this.selectLayer(now), now);
+  }
 
-    const layer = this.selectLayer(now);
+  async getLatestInfrared(now = new Date()): Promise<ImageAttachment> {
+    return this.getLatestForLayer(this.client.nightLayer, now);
+  }
+
+  private async getLatestForLayer(layer: SatelliteLayer, now: Date): Promise<ImageAttachment> {
+    const cached = this.cached.get(layer.name);
+    if (cached && now.getTime() - cached.cachedAt.getTime() < this.options.cacheMinutes * 60_000) {
+      return cached.attachment;
+    }
     const metadata = await this.client.getLatestMetadata(layer);
     const ageMinutes = (now.getTime() - metadata.observedAt.getTime()) / 60_000;
     if (ageMinutes > this.options.maxAgeMinutes) {
@@ -46,7 +52,7 @@ export class SatelliteImageService {
       source: "EUMETSAT EUMETView",
       observedAt: metadata.observedAt,
     };
-    this.cached = { attachment, cachedAt: now };
+    this.cached.set(layer.name, { attachment, cachedAt: now });
     return attachment;
   }
 

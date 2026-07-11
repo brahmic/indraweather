@@ -31,6 +31,16 @@ describe("SatelliteImageService", () => {
     expect(client.getLatestMetadata).toHaveBeenCalledWith(nightLayer);
   });
 
+  it("uses an infrared frame for animation even during daylight", async () => {
+    const observedAt = new Date("2026-07-11T09:50:00Z");
+    const client = stubClient(observedAt);
+    const service = createService(client);
+
+    await service.getLatestInfrared(new Date("2026-07-11T10:00:00Z"));
+
+    expect(client.getLatestMetadata).toHaveBeenCalledWith(nightLayer);
+  });
+
   it("rejects stale imagery", async () => {
     const client = stubClient(new Date("2026-07-11T05:00:00Z"));
     const service = createService(client);

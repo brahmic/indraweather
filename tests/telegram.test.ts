@@ -80,7 +80,17 @@ describe("TelegramChannel /weather", () => {
       getFreshOrRun: vi.fn(async () => ({
         id: "bulletin-1",
         text: "Кемь — Кандалакша · гидрометеосводка",
-        attachments: [],
+        attachments: [{
+          kind: "animation" as const,
+          data: new Uint8Array([1, 2, 3]),
+          contentType: "video/mp4" as const,
+          filename: "clouds.mp4",
+          caption: "Clouds",
+          source: "EUMETSAT",
+          startedAt: new Date(),
+          endedAt: new Date(),
+          frameCount: 3,
+        }],
       })),
     };
     const channel = new TelegramChannel(
@@ -134,6 +144,7 @@ describe("TelegramChannel /weather", () => {
 
     expect(calls.map((call) => call.method)).toEqual([
       "sendMessage",
+      "sendAnimation",
       "sendMessage",
       "deleteMessage",
     ]);

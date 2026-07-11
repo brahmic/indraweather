@@ -39,6 +39,14 @@ const envSchema = z.object({
   SATELLITE_MAX_AGE_MINUTES: z.coerce.number().int().positive().default(90),
   SATELLITE_CACHE_MINUTES: z.coerce.number().int().positive().default(10),
   SATELLITE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(9_000_000),
+  SATELLITE_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
+    .transform((value) => value === "true"),
+  SATELLITE_ANIMATION_INTERVAL_MINUTES: z.coerce.number().int().min(10).max(60).default(20),
+  SATELLITE_ANIMATION_WINDOW_HOURS: z.coerce.number().int().min(1).max(24).default(24),
+  SATELLITE_ANIMATION_RETENTION_HOURS: z.coerce.number().int().min(24).max(72).default(26),
+  SATELLITE_ANIMATION_MIN_FRAMES: z.coerce.number().int().min(3).max(72).default(3),
+  SATELLITE_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/satellite-animation"),
+  SATELLITE_ANIMATION_MAX_BYTES: z.coerce.number().int().positive().default(15_000_000),
   DETAILED_SATELLITE_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   DETAILED_SATELLITE_BBOX: z.string().default("31.4,65.6,35.8,67.4"),
@@ -118,6 +126,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       maxAgeMinutes: parsed.SATELLITE_MAX_AGE_MINUTES,
       cacheMinutes: parsed.SATELLITE_CACHE_MINUTES,
       maxImageBytes: parsed.SATELLITE_MAX_IMAGE_BYTES,
+    },
+    satelliteAnimation: {
+      enabled: parsed.SATELLITE_ENABLED && parsed.SATELLITE_ANIMATION_ENABLED,
+      intervalMinutes: parsed.SATELLITE_ANIMATION_INTERVAL_MINUTES,
+      windowHours: parsed.SATELLITE_ANIMATION_WINDOW_HOURS,
+      retentionHours: parsed.SATELLITE_ANIMATION_RETENTION_HOURS,
+      minFrames: parsed.SATELLITE_ANIMATION_MIN_FRAMES,
+      directory: parsed.SATELLITE_ANIMATION_DIRECTORY,
+      maxBytes: parsed.SATELLITE_ANIMATION_MAX_BYTES,
     },
     detailedSatellite: {
       enabled: parsed.DETAILED_SATELLITE_ENABLED,

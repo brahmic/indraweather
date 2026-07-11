@@ -26,7 +26,7 @@ class MaxApiError extends Error {
 }
 
 export interface MaxMessageAttachment {
-  type: "image";
+  type: "image" | "video";
   payload: object;
 }
 
@@ -58,6 +58,11 @@ export class MaxApiClient {
 
   async uploadImage(data: Uint8Array): Promise<MaxMessageAttachment> {
     const attachment = await this.bot.api.uploadImage({ source: Buffer.from(data), timeout: 60_000 });
+    return attachment.toJson();
+  }
+
+  async uploadVideo(data: Uint8Array): Promise<MaxMessageAttachment> {
+    const attachment = await this.bot.api.uploadVideo({ source: Buffer.from(data), timeout: 120_000 });
     return attachment.toJson();
   }
 

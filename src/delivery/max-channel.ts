@@ -47,6 +47,7 @@ type MaxWebhookUpdate = z.infer<typeof updateSchema>;
 interface MaxApi {
   initialize(webhookUrl: string, webhookSecret: string): Promise<string>;
   uploadImage(data: Uint8Array): Promise<MaxMessageAttachment>;
+  uploadVideo(data: Uint8Array): Promise<MaxMessageAttachment>;
   sendMessage(
     userId: number,
     text: string,
@@ -56,7 +57,7 @@ interface MaxApi {
   deleteMessage(messageId: string): Promise<void>;
 }
 
-interface PreparedImage {
+interface PreparedAttachment {
   caption: string;
   attachment: MaxMessageAttachment;
 }
@@ -111,7 +112,7 @@ export class MaxChannel implements DeliveryChannel {
 
   async broadcast(publication: Publication): Promise<void> {
     const recipientIds = await this.database.getActiveRecipientIds(this.id);
-    const prepared = this.prepareImages(publication);
+    const prepared = this.prepareAttachments(publication);
     await Promise.allSettled(recipientIds.map((recipientId) =>
       this.deliver(recipientId, publication, prepared)));
   }
@@ -216,7 +217,7 @@ export class MaxChannel implements DeliveryChannel {
     const progressId = await this.api.sendMessage(userId, "⏳ Собираю прогноз и спутниковые снимки…");
     try {
       const publication = await this.publications.getFreshOrRun();
-      await this.sendPublication(userId, publication, this.prepareImages(publication));
+      await this.sendPublication(userId, publication, this.prepareAttachments(publication));
       await this.api.deleteMessage(progressId).catch((error: unknown) => {
         this.logger.debug({ error }, "Failed to remove MAX weather progress message");
       });
@@ -247,22 +248,24 @@ export class MaxChannel implements DeliveryChannel {
     await this.api.sendMessage(userId, `Последнее успешное обновление: ${text}.`);
   }
 
-  private async prepareImages(publication: Publication): Promise<PreparedImage[]> {
-    const images: PreparedImage[] = [];
+  private async prepareAttachments(publication: Publication): Promise<PreparedAttachment[]> {
+    const attachments: PreparedAttachment[] = [];
     for (const attachment of publication.attachments) {
-      if (attachment.kind !== "image") continue;
-      images.push({
+      const uploaded = attachment.kind === "image"
+        ? await this.api.uploadImage(attachment.data)
+        : await this.api.uploadVideo(attachment.data);
+      attachments.push({
         caption: attachment.caption,
-        attachment: await this.api.uploadImage(attachment.data),
+        attachment: uploaded,
       });
     }
-    return images;
+    return attachments;
   }
 
   private async deliver(
     recipientId: string,
     publication: Publication,
-    prepared: Promise<PreparedImage[]>,
+    prepared: Promise<PreparedAttachment[]>,
   ): Promise<void> {
     if (!await this.database.claimDelivery(publication.id, this.id, recipientId)) return;
     try {
@@ -299,14 +302,14 @@ export class MaxChannel implements DeliveryChannel {
   private async sendPublication(
     userId: number,
     publication: Publication,
-    prepared: Promise<PreparedImage[]>,
+    prepared: Promise<PreparedAttachment[]>,
   ): Promise<string[]> {
     const messageIds: string[] = [];
-    for (const image of await prepared) {
+    for (const item of await prepared) {
       messageIds.push(await this.api.sendMessage(
         userId,
-        formatPostHtml(image.caption, [], true),
-        [image.attachment],
+        formatPostHtml(item.caption, [], true),
+        [item.attachment],
       ));
     }
     messageIds.push(...await this.sendText(userId, publication.text));

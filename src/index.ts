@@ -5,6 +5,7 @@ import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { PublicationService } from "./application/publication-service.js";
 import { SatelliteImageService } from "./application/satellite-image-service.js";
+import { SatelliteAnimationService, SatelliteAnimationStore } from "./application/satellite-animation-service.js";
 import { SentinelPassService } from "./application/sentinel-pass-service.js";
 import { loadConfig, loadControlPoints } from "./config.js";
 import type { DeliveryChannel } from "./delivery/types.js";
@@ -66,6 +67,23 @@ const satellite = config.satellite.enabled
   )
   : null;
 const [detailWest, detailSouth, detailEast, detailNorth] = config.detailedSatellite.bbox;
+const satelliteAnimation = satellite && config.satelliteAnimation.enabled
+  ? new SatelliteAnimationService(
+    database,
+    satellite,
+    new SatelliteAnimationStore(config.satelliteAnimation.directory),
+    {
+      intervalMinutes: config.satelliteAnimation.intervalMinutes,
+      windowHours: config.satelliteAnimation.windowHours,
+      retentionHours: config.satelliteAnimation.retentionHours,
+      minFrames: config.satelliteAnimation.minFrames,
+      directory: config.satelliteAnimation.directory,
+      maxBytes: config.satelliteAnimation.maxBytes,
+      timeZone: config.timeZone,
+    },
+    logger,
+  )
+  : null;
 const detailedSatellite = config.detailedSatellite.enabled
   ? new DetailedSatelliteService(
     new EumetsatCatalogClient({
@@ -128,6 +146,7 @@ const bulletinService = new BulletinService(
 const publicationService = new PublicationService(
   bulletinService,
   satellite,
+  satelliteAnimation,
   detailedSatellite,
   config.timeZone,
   logger,
@@ -167,17 +186,20 @@ scheduler = new Scheduler(
 );
 
 const healthServer = startHealthServer(database, config.port, logger, maxChannel);
+if (satelliteAnimation) await satelliteAnimation.start();
 scheduler.start();
 await deliveryService.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
 if (!maxChannel) logger.warn("MAX_BOT_TOKEN is empty; MAX delivery is disabled");
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");
 if (!satellite) logger.warn("Satellite image delivery is disabled");
+if (!satelliteAnimation) logger.warn("Satellite animation delivery is disabled");
 if (!detailedSatellite) logger.warn("Detailed satellite image delivery is disabled");
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutting down");
   scheduler.stop();
+  await satelliteAnimation?.stop();
   await deliveryService.stop();
   await new Promise<void>((resolve) => healthServer.close(() => resolve()));
   await database.close();

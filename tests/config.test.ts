@@ -37,6 +37,21 @@ describe("loadConfig", () => {
     })).toThrow(/SATELLITE_BBOX/u);
   });
 
+  it("enables a bounded 24-hour satellite animation by default", () => {
+    const config = loadConfig({ DATABASE_URL: "postgres://localhost/test" });
+    expect(config.satelliteAnimation).toMatchObject({
+      enabled: true,
+      intervalMinutes: 20,
+      windowHours: 24,
+      retentionHours: 26,
+      minFrames: 3,
+    });
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      SATELLITE_ANIMATION_WINDOW_HOURS: "25",
+    })).toThrow(/SATELLITE_ANIMATION_WINDOW_HOURS/u);
+  });
+
   it("parses detailed satellite quality limits", () => {
     const config = loadConfig({
       DATABASE_URL: "postgres://localhost/test",

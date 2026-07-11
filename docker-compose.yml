@@ -16,6 +16,8 @@ services:
       PORT: 3000
     ports:
       - "127.0.0.1:${APP_HTTP_PORT:-3000}:3000"
+    volumes:
+      - satellite_animation:/var/lib/indra/satellite-animation
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,3 +52,4 @@ services:
 
 volumes:
   postgres_data:
+  satellite_animation:

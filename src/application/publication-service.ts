@@ -1,5 +1,6 @@
 import type { BulletinService, RunBulletinOptions } from "./bulletin-service.js";
-import type { Publication } from "../delivery/types.js";
+import type { DeliveryAttachment, Publication } from "../delivery/types.js";
+import type { SatelliteAnimationService } from "./satellite-animation-service.js";
 import type { SatelliteImageService } from "./satellite-image-service.js";
 import type {
   DetailedSatelliteResult,
@@ -13,6 +14,7 @@ export class PublicationService {
   constructor(
     private readonly bulletins: BulletinService,
     private readonly satellite: SatelliteImageService | null,
+    private readonly satelliteAnimation: SatelliteAnimationService | null,
     private readonly detailedSatellite: DetailedSatelliteService | null,
     private readonly timeZone: string,
     private readonly logger: Logger,
@@ -33,12 +35,20 @@ export class PublicationService {
   }
 
   private async create(bulletin: BulletinRecord): Promise<Publication> {
-    const attachments = [];
+    const attachments: DeliveryAttachment[] = [];
     if (this.satellite) {
       try {
         attachments.push(await this.satellite.getLatest());
       } catch (error) {
         this.logger.warn({ error, bulletinId: bulletin.id }, "Satellite image is unavailable");
+      }
+    }
+    if (this.satelliteAnimation) {
+      try {
+        const animation = await this.satelliteAnimation.getLatest();
+        if (animation) attachments.push(animation);
+      } catch (error) {
+        this.logger.warn({ error, bulletinId: bulletin.id }, "Satellite animation is unavailable");
       }
     }
     let text = bulletin.content;

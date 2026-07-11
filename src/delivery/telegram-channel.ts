@@ -161,6 +161,12 @@ export class TelegramChannel implements DeliveryChannel {
           new InputFile(attachment.data, attachment.filename),
           { caption: attachment.caption },
         ));
+      } else if (attachment.kind === "animation") {
+        messages.push(await this.bot.api.sendAnimation(
+          recipientId,
+          new InputFile(attachment.data, attachment.filename),
+          { caption: attachment.caption },
+        ));
       }
     }
     messages.push(...await this.sendContent(recipientId, publication.text));

@@ -8,7 +8,19 @@ export interface ImageAttachment {
   observedAt: Date;
 }
 
-export type DeliveryAttachment = ImageAttachment;
+export interface AnimationAttachment {
+  kind: "animation";
+  data: Uint8Array;
+  contentType: "video/mp4";
+  filename: string;
+  caption: string;
+  source: string;
+  startedAt: Date;
+  endedAt: Date;
+  frameCount: number;
+}
+
+export type DeliveryAttachment = ImageAttachment | AnimationAttachment;
 
 export interface Publication {
   id: string;

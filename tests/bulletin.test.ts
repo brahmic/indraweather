@@ -74,8 +74,44 @@ describe("renderBulletin", () => {
     expect(result).toContain("11:00 МСК");
     expect(result).toContain("Ветер <сильный>");
     expect(result).toContain("Точка <1>");
-    expect(result).toContain("Сводный коридор ECMWF/GFS (границы моделей, не среднее)");
+    expect(result).toContain("Главное\nECMWF: усиление ветра");
+    expect(result).toContain("Контрольные точки\nДиапазоны: границы ECMWF/GFS, не среднее");
+    expect(result).toContain("Период 24–48 часов:");
+    expect(result).toContain("Источники\nПогода: Open-Meteo");
     expect(result).not.toContain("<b>");
+  });
+
+  it("renders model disagreement without repetitive wording", () => {
+    const compared: BulletinSummary = {
+      ...summary,
+      pointSummaries: summary.pointSummaries.map((point) => ({
+        ...point,
+        models: {
+          ...point.models,
+          gfs: { ...point.models.ecmwf!, model: "gfs", maxWindMs: 10, maxGustMs: 14 },
+        },
+      })),
+      agreement: {
+        agreed: false,
+        windDifferenceMs: 3,
+        gustDifferenceMs: 4,
+        directionDifferenceDeg: 0,
+        eventTimeDifferenceHours: 0,
+        reasons: ["расходятся по силе ветра", "расходятся по порывам"],
+      },
+    };
+    const result = renderBulletin({
+      summary: compared,
+      warnings: [],
+      tides: [],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain("Согласованность: существенные расхождения — сила ветра, порывы.");
   });
 });
 

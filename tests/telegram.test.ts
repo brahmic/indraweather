@@ -41,4 +41,27 @@ describe("formatTelegramPost", () => {
     expect(formatted).toContain("  • <b>ECMWF:</b>");
     expect(formatted).toContain("  ↔ <b>Расхождение:</b>");
   });
+
+  it("formats the structured weather bulletin", () => {
+    const formatted = formatTelegramPost([
+      "Кемь — Кандалакша · гидрометеосводка",
+      "Сформировано: 11 июля в 14:00 МСК · прогноз на 24 часа",
+      "",
+      "Главное",
+      "GFS: усиление ветра.",
+      "Верхняя граница моделей: ветер до 9 м/с.",
+      "",
+      "Контрольные точки",
+      "Диапазоны: границы ECMWF/GFS, не среднее.",
+      "",
+      "Кемский рейд",
+      "Ветер 3–9 м/с · порывы до 14 м/с.",
+      "Осадки 3,8 мм · температура +7…+12 °C.",
+    ].join("\n"), ["Кемский рейд"]);
+
+    expect(formatted).toContain("📌 <b>Главное</b>");
+    expect(formatted).toContain("📍 <b>Контрольные точки</b>");
+    expect(formatted).toContain("  • <b>Ветер</b> 3–9 м/с");
+    expect(formatted).toContain("  • <b>Осадки</b> 3,8 мм");
+  });
 });

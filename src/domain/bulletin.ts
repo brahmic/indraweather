@@ -3,8 +3,17 @@ import type {
   ModelSummary,
   OfficialWarning,
   TideExtreme,
+  WeatherModel,
 } from "./types.js";
 import { circularDifference } from "./analysis.js";
+
+const AGREEMENT_LABELS: Record<string, string> = {
+  "расходятся по силе ветра": "сила ветра",
+  "расходятся по порывам": "порывы",
+  "расходятся по направлению": "направление",
+  "расходятся по наличию заметного изменения ветра": "наличие изменения ветра",
+  "расходятся по времени изменения": "время изменения ветра",
+};
 
 export interface BulletinInput {
   summary: BulletinSummary;
@@ -20,7 +29,8 @@ export interface BulletinInput {
 export function renderBulletin(input: BulletinInput): string {
   const generatedAt = new Date(input.summary.generatedAt);
   const lines: string[] = [
-    `Кемь — Кандалакша · ${formatDateTime(generatedAt, input.timeZone)}`,
+    "Кемь — Кандалакша · гидрометеосводка",
+    `Сформировано: ${formatDateTime(generatedAt, input.timeZone)} · прогноз на ${input.summary.horizonHours} часа`,
   ];
 
   if (input.warnings.length > 0) {
@@ -41,8 +51,16 @@ export function renderBulletin(input: BulletinInput): string {
     lines.push("", `Неполные данные: ${input.unavailableModels.join(", ")}.`);
   }
 
-  lines.push("", `Главное: ${renderMainChange(input.summary, input.timeZone)}`);
-  lines.push("", "Сводный коридор ECMWF/GFS (границы моделей, не среднее):");
+  lines.push(
+    "",
+    "Главное",
+    renderMainChange(input.summary, input.timeZone),
+    `Верхняя граница моделей: ветер до ${round(input.summary.overallMaxWindMs)} м/с, ${formatGust(input.summary.overallMaxGustMs)}.`,
+    `Согласованность: ${renderAgreement(input.summary)}`,
+    "",
+    "Контрольные точки",
+    "Диапазоны: границы ECMWF/GFS, не среднее.",
+  );
 
   for (const point of input.summary.pointSummaries) {
     const gust = point.maxGustMs === null ? "нет данных" : `до ${round(point.maxGustMs)} м/с`;
@@ -58,20 +76,33 @@ export function renderBulletin(input: BulletinInput): string {
       extras.push(`температура ${formatSigned(Math.min(...temperatures))}…${formatSigned(Math.max(...temperatures))} °C`);
     }
     lines.push(
-      `${point.point.name}: ветер ${round(point.minWindMs)}–${round(point.maxWindMs)} м/с, порывы ${gust}${extras.length ? `; ${extras.join(", ")}` : ""}.`,
+      "",
+      point.point.name,
+      `Ветер ${round(point.minWindMs)}–${round(point.maxWindMs)} м/с · порывы ${gust}.`,
     );
+    if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
   }
 
-  lines.push("", `Поворот ветра: ${renderDirectionTurn(input.summary)}.`);
-  lines.push("", `Модели: ${renderAgreement(input.summary)}`);
-  lines.push(`Давление: ${renderPressure(input.summary)}.`);
-  lines.push(`Следующие 24 часа: ${renderOutlook(input.summary)}.`);
-  lines.push(`Прилив: ${renderTide(input.tides, generatedAt, input.timeZone)}`);
-  lines.push(`Изменение: ${renderPreviousDifference(input.summary, input.previousSummary)}.`);
+  lines.push(
+    "",
+    "Обстановка",
+    `Поворот ветра: ${renderDirectionTurn(input.summary)}.`,
+    `Давление: ${renderPressure(input.summary)}.`,
+    `Период 24–48 часов: ${renderOutlook(input.summary)}.`,
+    `Прилив: ${renderTide(input.tides, generatedAt, input.timeZone)}`,
+    "",
+    "Выпуск",
+    `Изменение: ${renderPreviousDifference(input.summary, input.previousSummary)}.`,
+  );
   if (input.nextScheduledAt) {
     lines.push(`Следующий выпуск: ${formatDateTime(input.nextScheduledAt, input.timeZone)}.`);
   }
-  lines.push("", "Данные: Open-Meteo (ECMWF, NOAA GFS); приливы: Stormglass.");
+  lines.push(
+    "",
+    "Источники",
+    "Погода: Open-Meteo (ECMWF, NOAA GFS).",
+    "Приливы: Stormglass.",
+  );
   return lines.join("\n");
 }
 
@@ -81,6 +112,7 @@ function renderDirectionTurn(summary: BulletinSummary): string {
       if (!model || model.directionStartDeg === null || model.directionEndDeg === null) return [];
       return [{
         point: point.point.name,
+        model: model.model,
         start: model.directionStartDeg,
         end: model.directionEndDeg,
         angle: circularDifference(model.directionStartDeg, model.directionEndDeg),
@@ -90,7 +122,7 @@ function renderDirectionTurn(summary: BulletinSummary): string {
     .sort((left, right) => right.angle - left.angle);
   const turn = turns[0];
   if (!turn) return "заметный поворот не выделяется";
-  return `${turn.point}: ${windDirectionLabel(turn.start)} → ${windDirectionLabel(turn.end)}`;
+  return `${turn.point}, ${modelLabel(turn.model)}: ${windDirectionLabel(turn.start)} → ${windDirectionLabel(turn.end)}`;
 }
 
 function renderOutlook(summary: BulletinSummary): string {
@@ -109,32 +141,38 @@ function renderMainChange(summary: BulletinSummary, timeZone: string): string {
   ).sort((left, right) => Math.abs(right.model.windChangeMs) - Math.abs(left.model.windChangeMs));
   const strongest = changes[0];
   if (!strongest || !strongest.model.windChangeAt) {
-    const windiest = summary.pointSummaries.reduce((left, right) =>
-      left.maxWindMs >= right.maxWindMs ? left : right);
-    return `наибольший ветер ожидается в точке «${windiest.point.name}» — до ${round(windiest.maxWindMs)} м/с.`;
+    const windiest = summary.pointSummaries.flatMap((point) =>
+      Object.values(point.models).flatMap((model) => model ? [{ point: point.point, model }] : []))
+      .sort((left, right) => right.model.maxWindMs - left.model.maxWindMs)[0];
+    if (!windiest) return "Данных для выделения главного изменения недостаточно.";
+    return `${modelLabel(windiest.model.model)}: наибольший ветер ожидается у точки «${windiest.point.name}» — до ${round(windiest.model.maxWindMs)} м/с.`;
   }
   const action = strongest.model.windChangeMs > 0 ? "усиление" : "ослабление";
-  return `${action} ветра у точки «${strongest.point}» около ${formatTime(strongest.model.windChangeAt, timeZone)}.`;
+  return `${modelLabel(strongest.model.model)}: ${action} ветра у точки «${strongest.point}» около ${formatTime(strongest.model.windChangeAt, timeZone)}.`;
 }
 
 function renderAgreement(summary: BulletinSummary): string {
   const agreement = summary.agreement;
   if (agreement.reasons.includes("одна из моделей недоступна")) {
-    return "сравнение не выполнено, одна из моделей недоступна.";
+    return "сравнение неполное — одна из моделей недоступна.";
   }
-  if (agreement.agreed) return "в целом согласны.";
-  const details = agreement.reasons.join(", ");
-  return `${details}.`;
+  if (agreement.agreed) return "модели в целом согласны.";
+  const labels = agreement.reasons.map((reason) => AGREEMENT_LABELS[reason] ?? reason);
+  return `существенные расхождения — ${labels.join(", ")}.`;
 }
 
 function renderPressure(summary: BulletinSummary): string {
   const changes = summary.pointSummaries.flatMap((point) =>
-    Object.values(point.models).map((model) => model?.pressureChangeHpa ?? null),
-  ).filter((value): value is number => value !== null);
+    Object.values(point.models).flatMap((model) =>
+      model?.pressureChangeHpa === null || model?.pressureChangeHpa === undefined
+        ? []
+        : [{ point: point.point.name, model: model.model, value: model.pressureChangeHpa }]),
+  );
   if (changes.length === 0) return "нет данных";
-  const strongest = changes.reduce((left, right) => Math.abs(left) >= Math.abs(right) ? left : right);
-  if (Math.abs(strongest) < 1) return "без существенного изменения";
-  return `${strongest > 0 ? "рост" : "снижение"} до ${formatNumber(Math.abs(strongest))} гПа за 24 часа`;
+  const strongest = changes.reduce((left, right) =>
+    Math.abs(left.value) >= Math.abs(right.value) ? left : right);
+  if (Math.abs(strongest.value) < 1) return "без существенного изменения";
+  return `${strongest.point}, ${modelLabel(strongest.model)}: ${strongest.value > 0 ? "рост" : "снижение"} на ${formatNumber(Math.abs(strongest.value))} гПа за 24 часа`;
 }
 
 function renderTide(tides: TideExtreme[], now: Date, timeZone: string): string {
@@ -225,4 +263,16 @@ function formatNumber(value: number): string {
 function formatSigned(value: number): string {
   const rounded = Math.round(value);
   return rounded > 0 ? `+${rounded}` : String(rounded);
+}
+
+function formatGust(value: number | null): string {
+  return value === null ? "порывы не определены" : `порывы до ${round(value)} м/с`;
+}
+
+function modelLabel(model: WeatherModel): string {
+  return model === "ecmwf" ? "ECMWF" : "GFS";
+}
+
+function capitalize(value: string): string {
+  return value ? value[0]?.toLocaleUpperCase("ru-RU") + value.slice(1) : value;
 }

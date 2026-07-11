@@ -162,15 +162,70 @@ export class TelegramChannel implements DeliveryChannel {
   }
 
   private async sendContent(recipientId: string, content: string) {
-    const chunks = splitMessage(content, 3900);
+    const chunks = splitMessage(content, 3400);
     const messages = [];
-    for (const chunk of chunks) {
-      messages.push(await this.bot.api.sendMessage(recipientId, chunk, {
+    for (const [index, chunk] of chunks.entries()) {
+      messages.push(await this.bot.api.sendMessage(recipientId, formatTelegramPost(
+        chunk,
+        this.points.map((point) => point.name),
+        index === 0,
+      ), {
+        parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
       }));
     }
     return messages;
   }
+}
+
+export function formatTelegramPost(
+  content: string,
+  pointNames: string[],
+  includeTitle = true,
+): string {
+  return content.split("\n").map((line, index) => {
+    if (!line) return "";
+    if (includeTitle && index === 0) return `🌊 <b>${escapeHtml(line)}</b>`;
+
+    const pointName = pointNames.find((name) => line === name || line.startsWith(`${name}:`));
+    if (pointName) {
+      const remainder = line.slice(pointName.length);
+      return `📍 <b>${escapeHtml(pointName)}${remainder.startsWith(":") ? ":" : ""}</b>${escapeHtml(remainder.replace(/^:/u, ""))}`;
+    }
+
+    const labelled = formatLabel(line);
+    return labelled ?? escapeHtml(line);
+  }).join("\n");
+}
+
+function formatLabel(line: string): string | null {
+  const labels: Array<[prefix: string, icon: string, wholeLine?: boolean]> = [
+    ["Официальное предупреждение", "⚠️", true],
+    ["Официальные предупреждения:", "⚠️"],
+    ["Неполные данные:", "⚠️"],
+    ["Главное:", "📌"],
+    ["Сводный коридор ECMWF/GFS", "🌬️", true],
+    ["Поворот ветра:", "🧭"],
+    ["Модели:", "🔎"],
+    ["Давление:", "📈"],
+    ["Следующие 24 часа:", "⏱️"],
+    ["Прилив:", "🌊"],
+    ["Изменение:", "🔄"],
+    ["Следующий выпуск:", "🕒"],
+    ["Детальный снимок Sentinel-3 пропущен:", "🛰️"],
+    ["Период:", "🗓️"],
+    ["ECMWF:", "  •"],
+    ["GFS:", "  •"],
+    ["Расхождение:", "  ↔"],
+    ["Итог сравнения:", "📊"],
+    ["Данные:", "ℹ️"],
+    ["Источник:", "ℹ️"],
+  ];
+  const match = labels.find(([prefix]) => line.startsWith(prefix));
+  if (!match) return null;
+  const [prefix, icon, wholeLine] = match;
+  if (wholeLine) return `${icon} <b>${escapeHtml(line)}</b>`;
+  return `${icon} <b>${escapeHtml(prefix)}</b>${escapeHtml(line.slice(prefix.length))}`;
 }
 
 export function splitMessage(content: string, limit: number): string[] {

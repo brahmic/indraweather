@@ -1,10 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { splitMessage } from "../src/delivery/telegram-channel.js";
+import { formatTelegramPost, splitMessage } from "../src/delivery/telegram-channel.js";
 
 describe("splitMessage", () => {
   it("splits on line boundaries within Telegram limit", () => {
     const chunks = splitMessage(["one", "two", "three"].join("\n"), 8);
     expect(chunks).toEqual(["one\ntwo", "three"]);
     expect(chunks.every((chunk) => chunk.length <= 8)).toBe(true);
+  });
+});
+
+describe("formatTelegramPost", () => {
+  it("adds readable Telegram HTML while escaping dynamic content", () => {
+    const formatted = formatTelegramPost([
+      "Кемь — Кандалакша · 11 июля, 14:00 МСК",
+      "",
+      "Главное: ветер <сильный>.",
+      "",
+      "Кемский рейд: ветер 3–7 м/с.",
+      "Источник: https://example.test/?a=1&b=2",
+    ].join("\n"), ["Кемский рейд"]);
+
+    expect(formatted).toContain("🌊 <b>Кемь — Кандалакша");
+    expect(formatted).toContain("📌 <b>Главное:</b> ветер &lt;сильный&gt;.");
+    expect(formatted).toContain("📍 <b>Кемский рейд:</b> ветер 3–7 м/с.");
+    expect(formatted).toContain("a=1&amp;b=2");
+  });
+
+  it("formats model detail blocks with indentation", () => {
+    const formatted = formatTelegramPost([
+      "Детализация по моделям · 11 июля, 14:00 МСК",
+      "Период: ближайшие 24 часа.",
+      "",
+      "Кемский рейд",
+      "ECMWF: ветер 3–6 м/с.",
+      "GFS: ветер 5–9 м/с.",
+      "Расхождение: максимальный ветер 3 м/с.",
+    ].join("\n"), ["Кемский рейд"]);
+
+    expect(formatted).toContain("📍 <b>Кемский рейд</b>");
+    expect(formatted).toContain("  • <b>ECMWF:</b>");
+    expect(formatted).toContain("  ↔ <b>Расхождение:</b>");
   });
 });

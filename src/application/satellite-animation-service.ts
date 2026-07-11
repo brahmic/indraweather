@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { basename, join } from "node:path";
+import sharp from "sharp";
 import type { AnimationAttachment, ImageAttachment } from "../delivery/types.js";
 import type {
   Database,
@@ -11,7 +12,7 @@ import type {
 import type { Logger } from "../logger.js";
 
 const execFileAsync = promisify(execFile);
-const FRAME_DURATION_SECONDS = 0.1;
+const FRAME_DURATION_SECONDS = 0.15;
 
 export interface SatelliteAnimationOptions {
   intervalMinutes: number;
@@ -137,11 +138,16 @@ export class SatelliteAnimationService {
     const first = ready[0];
     const last = ready.at(-1);
     if (!first || !last) return null;
-    const filename = `animation-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
+    const filename = `animation-v2-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
     const outputPath = this.store.path(filename);
     if (!await fileExists(outputPath)) {
       const temporaryPath = this.store.path(`.${filename}.tmp.mp4`);
-      await this.encoder.encode(ready.map((frame) => this.store.path(frame.filename)), temporaryPath);
+      const stamped = await this.createStampedFrames(filename, ready);
+      try {
+        await this.encoder.encode(stamped.paths, temporaryPath);
+      } finally {
+        await Promise.all(stamped.filenames.map((name) => this.store.remove(name)));
+      }
       const output = await stat(temporaryPath);
       if (output.size > this.options.maxBytes) {
         await rm(temporaryPath, { force: true });
@@ -170,6 +176,40 @@ export class SatelliteAnimationService {
     await this.database.removeExpiredSatelliteCaptureJobs(before);
     await this.store.removeOldAnimations(before);
   }
+
+  private async createStampedFrames(
+    animationFilename: string,
+    frames: SatelliteAnimationFrameRecord[],
+  ): Promise<{ paths: string[]; filenames: string[] }> {
+    const filenames = frames.map((_, index) => `.${animationFilename}.${index}.png`);
+    await Promise.all(frames.map(async (frame, index) => {
+      const filename = filenames[index];
+      if (!filename) throw new Error("Satellite animation frame filename is missing");
+      const source = await readFile(this.store.path(frame.filename));
+      await this.store.write(filename, await stampFrame(source, frame.observedAt, this.options.timeZone));
+    }));
+    return { filenames, paths: filenames.map((filename) => this.store.path(filename)) };
+  }
+}
+
+async function stampFrame(data: Uint8Array, observedAt: Date, timeZone: string): Promise<Uint8Array> {
+  const image = sharp(data);
+  const metadata = await image.metadata();
+  const width = metadata.width ?? 1000;
+  const height = metadata.height ?? 800;
+  const time = new Intl.DateTimeFormat("ru-RU", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(observedAt);
+  const label = `EUMETSAT IR · ${time} МСК`;
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="12" y="${height - 48}" width="300" height="34" rx="3" fill="#101820" fill-opacity="0.78"/>
+    <text x="24" y="${height - 25}" fill="white" font-family="sans-serif" font-size="18">${label}</text>
+  </svg>`;
+  return new Uint8Array(await image.composite([{ input: Buffer.from(svg) }]).png().toBuffer());
 }
 
 export class SatelliteAnimationStore {

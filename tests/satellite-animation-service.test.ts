@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SatelliteAnimationService,
@@ -25,7 +26,10 @@ describe("SatelliteAnimationService", () => {
       byteSize: 4,
       source: "EUMETSAT EUMETView",
     }));
-    await Promise.all(frames.map((frame) => store.write(frame.filename, new Uint8Array([1, 2, 3, 4]))));
+    const image = await sharp({
+      create: { width: 16, height: 16, channels: 3, background: "#234567" },
+    }).png().toBuffer();
+    await Promise.all(frames.map((frame) => store.write(frame.filename, image)));
     const encoder = {
       encode: vi.fn(async (_paths: string[], output: string) => writeFile(output, new Uint8Array([0, 1, 2]))),
     };
@@ -41,9 +45,10 @@ describe("SatelliteAnimationService", () => {
     });
     expect(animation?.caption).toContain("3 кадров");
     expect(encoder.encode).toHaveBeenCalledWith(
-      frames.map((frame) => join(directory, frame.filename)),
+      expect.arrayContaining([expect.stringContaining(".png")]),
       expect.stringContaining(".tmp.mp4"),
     );
+    expect((encoder.encode.mock.calls[0]?.[0] as string[]).length).toBe(3);
   });
 
   it("waits for the minimum number of successful frames", async () => {

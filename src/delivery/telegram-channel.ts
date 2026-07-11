@@ -66,13 +66,18 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("weather", async (ctx) => {
-      await ctx.replyWithChatAction("typing");
+      const progress = await ctx.reply("⏳ Собираю прогноз и спутниковые снимки…");
       try {
         const publication = await this.publications.getFreshOrRun();
         await this.sendPublication(String(ctx.chat.id), publication);
+        await ctx.api.deleteMessage(ctx.chat.id, progress.message_id).catch((error: unknown) => {
+          this.logger.debug({ error }, "Failed to remove weather progress message");
+        });
       } catch (error) {
         this.logger.error({ error }, "Manual bulletin failed");
-        await ctx.reply("Не удалось сформировать бюллетень: погодные данные временно недоступны.");
+        const failure = "Не удалось сформировать бюллетень: погодные данные временно недоступны.";
+        await ctx.api.editMessageText(ctx.chat.id, progress.message_id, failure)
+          .catch(async () => ctx.reply(failure));
       }
     });
 

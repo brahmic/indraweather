@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { formatTelegramPost, splitMessage } from "../src/delivery/telegram-channel.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  formatTelegramPost,
+  splitMessage,
+  TelegramChannel,
+} from "../src/delivery/telegram-channel.js";
 
 describe("splitMessage", () => {
   it("splits on line boundaries within Telegram limit", () => {
@@ -63,5 +67,74 @@ describe("formatTelegramPost", () => {
     expect(formatted).toContain("📍 <b>Контрольные точки</b>");
     expect(formatted).toContain("  • <b>Ветер</b> 3–9 м/с");
     expect(formatted).toContain("  • <b>Осадки</b> 3,8 мм");
+  });
+});
+
+describe("TelegramChannel /weather", () => {
+  it("sends progress before the publication and removes it afterwards", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getFreshOrRun: vi.fn(async () => ({
+        id: "bulletin-1",
+        text: "Кемь — Кандалакша · гидрометеосводка",
+        attachments: [],
+      })),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      {} as never,
+      publications as never,
+      [],
+      { timeZone: "Europe/Moscow" } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      const body = payload as Record<string, unknown>;
+      calls.push({ method, body });
+      const result = method === "deleteMessage"
+        ? true
+        : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: body.text,
+        };
+      return { ok: true, result } as never;
+    });
+    channel.bot.botInfo = {
+      id: 999,
+      is_bot: true,
+      first_name: "Test",
+      username: "test_bot",
+      can_join_groups: true,
+      can_read_all_group_messages: false,
+      supports_inline_queries: false,
+      can_connect_to_business: false,
+      has_main_web_app: false,
+      has_topics_enabled: false,
+      allows_users_to_create_topics: false,
+      can_manage_bots: false,
+      supports_join_request_queries: false,
+    };
+
+    await channel.bot.handleUpdate({
+      update_id: 1,
+      message: {
+        message_id: 10,
+        date: 1_783_700_000,
+        chat: { id: 123, type: "private", first_name: "User" },
+        from: { id: 123, is_bot: false, first_name: "User" },
+        text: "/weather",
+        entities: [{ type: "bot_command", offset: 0, length: 8 }],
+      },
+    });
+
+    expect(calls.map((call) => call.method)).toEqual([
+      "sendMessage",
+      "sendMessage",
+      "deleteMessage",
+    ]);
+    expect(calls[0]?.body.text).toContain("Собираю прогноз");
+    expect(publications.getFreshOrRun).toHaveBeenCalledOnce();
   });
 });

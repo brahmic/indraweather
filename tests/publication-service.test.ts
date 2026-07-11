@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatDetailedSatelliteSkip } from "../src/application/publication-service.js";
+import {
+  formatDetailedSatelliteSkip,
+  PublicationService,
+} from "../src/application/publication-service.js";
 
 describe("formatDetailedSatelliteSkip", () => {
   it("states the skip reason and the calculated next pass in local time", () => {
@@ -29,5 +32,29 @@ describe("formatDetailedSatelliteSkip", () => {
       nextPassAt: null,
     }, "Europe/Moscow");
     expect(text).toContain("последнему снимку 19 ч при допустимых 12 ч");
+  });
+});
+
+describe("PublicationService", () => {
+  it("adds a details command to weather publications", async () => {
+    const service = new PublicationService(
+      {
+        getFreshOrRun: async () => ({
+          id: "bulletin-1",
+          content: "weather",
+          contentFormat: "plain",
+          summary: {},
+          createdAt: new Date(),
+        }),
+      } as never,
+      null,
+      null,
+      "Europe/Moscow",
+      { warn: () => undefined } as never,
+    );
+
+    const publication = await service.getFreshOrRun();
+
+    expect(publication.text).toBe("weather\n\nПодробности по моделям: /details");
   });
 });

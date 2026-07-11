@@ -56,6 +56,7 @@ export class PublicationService {
         text += `\n\n${formatDetailedSatelliteSkip(detail, this.timeZone)}`;
       }
     }
+    text += "\n\nПодробности по моделям: /details";
     return {
       id: bulletin.id,
       text,

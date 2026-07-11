@@ -202,6 +202,12 @@ export class MaxChannel implements DeliveryChannel {
       case "status":
         await this.sendStatus(sender.user_id);
         break;
+      case "clouds":
+        await this.sendDiagnostic(sender.user_id, () => this.publications.getClouds(), "Диагностический снимок облаков временно недоступен.");
+        break;
+      case "radar":
+        await this.sendDiagnostic(sender.user_id, () => this.publications.getRadar(), "Радар Sentinel-1 временно недоступен или ещё не настроен.");
+        break;
     }
   }
 
@@ -246,6 +252,17 @@ export class MaxChannel implements DeliveryChannel {
       }).format(updatedAt)} МСК`
       : "успешных обновлений ещё не было";
     await this.api.sendMessage(userId, `Последнее успешное обновление: ${text}.`);
+  }
+
+  private async sendDiagnostic(userId: number, getAttachment: () => Promise<import("./types.js").ImageAttachment>, failure: string): Promise<void> {
+    try {
+      const attachment = await getAttachment();
+      const uploaded = await this.api.uploadImage(attachment.data);
+      await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
+    } catch (error) {
+      this.logger.warn({ error }, "MAX satellite diagnostic request failed");
+      await this.api.sendMessage(userId, failure);
+    }
   }
 
   private async prepareAttachments(publication: Publication): Promise<PreparedAttachment[]> {

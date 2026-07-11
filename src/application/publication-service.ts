@@ -1,6 +1,8 @@
 import type { BulletinService, RunBulletinOptions } from "./bulletin-service.js";
 import type { DeliveryAttachment, Publication } from "../delivery/types.js";
 import type { SatelliteAnimationService } from "./satellite-animation-service.js";
+import type { CloudDiagnosticService } from "./cloud-diagnostic-service.js";
+import type { RadarService } from "./radar-service.js";
 import type { SatelliteImageService } from "./satellite-image-service.js";
 import type {
   DetailedSatelliteResult,
@@ -16,6 +18,8 @@ export class PublicationService {
     private readonly satellite: SatelliteImageService | null,
     private readonly satelliteAnimation: SatelliteAnimationService | null,
     private readonly detailedSatellite: DetailedSatelliteService | null,
+    private readonly clouds: CloudDiagnosticService | null,
+    private readonly radar: RadarService | null,
     private readonly timeZone: string,
     private readonly logger: Logger,
   ) {}
@@ -32,6 +36,16 @@ export class PublicationService {
   async getFreshDetails(): Promise<string> {
     const bulletin = await this.bulletins.getFreshOrRun();
     return renderModelDetails(bulletin.summary, this.timeZone);
+  }
+
+  async getClouds() {
+    if (!this.clouds) throw new Error("Cloud diagnostics are disabled");
+    return this.clouds.getLatest();
+  }
+
+  async getRadar() {
+    if (!this.radar) throw new Error("Sentinel-1 radar is not configured");
+    return this.radar.getLatest();
   }
 
   private async create(bulletin: BulletinRecord): Promise<Publication> {

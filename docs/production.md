@@ -35,6 +35,13 @@ openssl rand -hex 32
 стабильно вычисляется из токена и в `.env` не хранится. Адрес MAX API
 `https://platform-api2.max.ru` зафиксирован в коде.
 
+Команда `/radar` требует отдельный бесплатный OAuth Client в Copernicus Data
+Space: в Sentinel Hub Dashboard создать клиент типа `Client Credentials` и
+записать его значения в `.env` как `COPERNICUS_CLIENT_ID` и
+`COPERNICUS_CLIENT_SECRET`. Без обоих значений приложение запускается штатно,
+но `/radar` сообщит, что радар не настроен. Не используйте тестовые публичные
+учётные данные Copernicus в production.
+
 Для исходящих запросов к MAX Docker image устанавливает официальный
 `Russian Trusted Root CA` Минцифры из `certs/russian_trusted_root_ca.crt`.
 Это отдельная цепочка доверия MAX API: сертификат на вашем поддомене нужен для

@@ -85,4 +85,17 @@ describe("loadConfig", () => {
       MAX_PUBLIC_BASE_URL: "http://weather.example.ru/path",
     })).toThrow(/HTTPS origin/u);
   });
+
+  it("enables Sentinel-1 radar only with complete Copernicus OAuth credentials", () => {
+    const config = loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      COPERNICUS_CLIENT_ID: "client",
+      COPERNICUS_CLIENT_SECRET: "secret",
+    });
+    expect(config.copernicus).toMatchObject({ clientId: "client", clientSecret: "secret", lookbackDays: 14 });
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      COPERNICUS_CLIENT_ID: "client",
+    })).toThrow(/COPERNICUS_CLIENT_ID/u);
+  });
 });

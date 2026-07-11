@@ -1,6 +1,7 @@
 import type {
   BulletinSummary,
   ModelSummary,
+  MarinePointSummary,
   OfficialWarning,
   TideExtreme,
   WeatherModel,
@@ -23,6 +24,8 @@ export interface BulletinInput {
   nextScheduledAt: Date | null;
   unavailableModels: string[];
   warningSourceUnavailable: boolean;
+  marine: MarinePointSummary[];
+  marineSourceUnavailable: boolean;
   timeZone: string;
 }
 
@@ -83,6 +86,16 @@ export function renderBulletin(input: BulletinInput): string {
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
   }
 
+  lines.push("", "Волна и вода");
+  if (input.marine.length === 0) {
+    lines.push(input.marineSourceUnavailable
+      ? "Морская модель временно недоступна."
+      : "Данных морской модели недостаточно.");
+  } else {
+    lines.push("Прогноз морской модели; в губах, за островами и у берега условия могут отличаться.");
+    for (const marine of input.marine) lines.push(renderMarine(marine));
+  }
+
   lines.push(
     "",
     "Обстановка",
@@ -101,9 +114,36 @@ export function renderBulletin(input: BulletinInput): string {
     "",
     "Источники",
     "Погода: Open-Meteo (ECMWF, NOAA GFS).",
+    "Волна и вода: Open-Meteo Marine.",
     "Приливы: Stormglass.",
   );
   return lines.join("\n");
+}
+
+function renderMarine(summary: MarinePointSummary): string {
+  const wave = summary.minWaveHeightM === null || summary.maxWaveHeightM === null
+    ? "волна: нет данных"
+    : `волна ${formatNumber(summary.minWaveHeightM)}–${formatNumber(summary.maxWaveHeightM)} м${summary.waveDirectionDeg === null ? "" : `, с ${windDirectionLabel(summary.waveDirectionDeg)}`}${formatPeriod(summary.minWavePeriodSeconds, summary.maxWavePeriodSeconds)}`;
+  const components: string[] = [wave];
+  if (summary.maxWindWaveHeightM !== null || summary.maxSwellHeightM !== null) {
+    components.push(`ветровая ${formatMetres(summary.maxWindWaveHeightM)}, зыбь ${formatMetres(summary.maxSwellHeightM)}`);
+  }
+  if (summary.maxCurrentKnots !== null) {
+    components.push(`течение до ${formatNumber(summary.maxCurrentKnots)} уз${summary.currentDirectionDeg === null ? "" : ` на ${windDirectionLabel(summary.currentDirectionDeg)}`}`);
+  }
+  if (summary.seaSurfaceTemperatureC !== null) {
+    components.push(`вода ${formatSigned(summary.seaSurfaceTemperatureC)} °C`);
+  }
+  return `${summary.point.name}: ${components.join("; ")}.`;
+}
+
+function formatPeriod(minimum: number | null, maximum: number | null): string {
+  if (minimum === null || maximum === null) return "";
+  return `, период ${formatNumber(minimum)}–${formatNumber(maximum)} с`;
+}
+
+function formatMetres(value: number | null): string {
+  return value === null ? "нет данных" : `${formatNumber(value)} м`;
 }
 
 function renderDirectionTurn(summary: BulletinSummary): string {

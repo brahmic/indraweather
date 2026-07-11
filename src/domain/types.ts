@@ -41,6 +41,20 @@ export interface OfficialWarning {
   publishedAt: Date | null;
 }
 
+export interface MarinePointSummary {
+  point: ControlPoint;
+  minWaveHeightM: number | null;
+  maxWaveHeightM: number | null;
+  waveDirectionDeg: number | null;
+  minWavePeriodSeconds: number | null;
+  maxWavePeriodSeconds: number | null;
+  maxWindWaveHeightM: number | null;
+  maxSwellHeightM: number | null;
+  maxCurrentKnots: number | null;
+  currentDirectionDeg: number | null;
+  seaSurfaceTemperatureC: number | null;
+}
+
 export interface ModelSummary {
   model: WeatherModel;
   minWindMs: number;

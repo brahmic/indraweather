@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { BulletinService } from "./application/bulletin-service.js";
 import { CoastlineOverlayService } from "./application/coastline-overlay-service.js";
+import { CloudDiagnosticService } from "./application/cloud-diagnostic-service.js";
+import { RadarService } from "./application/radar-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { PublicationService } from "./application/publication-service.js";
@@ -16,6 +18,8 @@ import { EumetsatCatalogClient } from "./infrastructure/eumetsat-catalog.js";
 import { EumetsatTleClient } from "./infrastructure/eumetsat-tle.js";
 import { KolgimetClient } from "./infrastructure/kolgimet.js";
 import { OpenMeteoClient } from "./infrastructure/open-meteo.js";
+import { OpenMeteoMarineClient } from "./infrastructure/open-meteo-marine.js";
+import { CopernicusRadarClient } from "./infrastructure/copernicus-radar.js";
 import { StormglassClient } from "./infrastructure/stormglass.js";
 import { createLogger } from "./logger.js";
 import { Scheduler } from "./scheduler.js";
@@ -32,6 +36,10 @@ await database.migrate();
 await database.syncControlPoints(points);
 
 const weather = new OpenMeteoClient({
+  timeoutMs: config.weatherTimeoutMs,
+  retries: config.weatherRetryCount,
+});
+const marine = new OpenMeteoMarineClient({
   timeoutMs: config.weatherTimeoutMs,
   retries: config.weatherRetryCount,
 });
@@ -132,11 +140,27 @@ const detailedSatellite = config.detailedSatellite.enabled
     },
   )
   : null;
+const cloudDiagnostics = satellite
+  ? new CloudDiagnosticService(
+    new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.satellite.bbox, width: config.satellite.width, height: config.satellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
+    new CoastlineOverlayService({ bbox: config.satellite.bbox, width: config.satellite.width, height: config.satellite.height, maxImageBytes: config.satellite.maxImageBytes }),
+    { latitude: 66, longitude: 33, timeZone: config.timeZone },
+  )
+  : null;
+const radar = config.copernicus
+  ? new RadarService(
+    new CopernicusRadarClient({ ...config.copernicus, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, maxImageBytes: config.satellite.maxImageBytes }),
+    new CoastlineOverlayService({ bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, maxImageBytes: config.satellite.maxImageBytes }),
+    new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
+    config.timeZone,
+  )
+  : null;
 
 let scheduler: Scheduler;
 const bulletinService = new BulletinService(
   database,
   weather,
+  marine,
   stormglass,
   kolgimet,
   points,
@@ -149,6 +173,8 @@ const publicationService = new PublicationService(
   satellite,
   satelliteAnimation,
   detailedSatellite,
+  cloudDiagnostics,
+  radar,
   config.timeZone,
   logger,
 );

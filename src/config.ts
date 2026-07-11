@@ -17,6 +17,8 @@ const envSchema = z.object({
   MAX_BOT_TOKEN: z.string().optional().transform(emptyToUndefined),
   MAX_PUBLIC_BASE_URL: z.string().optional().transform(emptyToUndefined),
   STORMGLASS_API_KEY: z.string().optional().transform(emptyToUndefined),
+  COPERNICUS_CLIENT_ID: z.string().optional().transform(emptyToUndefined),
+  COPERNICUS_CLIENT_SECRET: z.string().optional().transform(emptyToUndefined),
   APP_TIMEZONE: z.string().default("Europe/Moscow"),
   SCHEDULE_TIMES: z.string().default("05:00,11:00,17:00,23:00"),
   SCHEDULE_RETRY_MINUTES: z.coerce.number().int().positive().default(15),
@@ -64,6 +66,7 @@ const envSchema = z.object({
     .default("https://service.eumetsat.int/tle/javascript/data_content_s3a.js"),
   EUMETSAT_TLE_S3B_URL: z.url()
     .default("https://service.eumetsat.int/tle/javascript/data_content_s3b.js"),
+  COPERNICUS_RADAR_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(30).default(14),
 });
 
 const pointSchema = z.object({
@@ -115,6 +118,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     telegramBotToken: parsed.TELEGRAM_BOT_TOKEN,
     max: resolveMaxConfig(parsed.MAX_BOT_TOKEN, parsed.MAX_PUBLIC_BASE_URL),
     stormglassApiKey: parsed.STORMGLASS_API_KEY,
+    copernicus: resolveCopernicusConfig(parsed.COPERNICUS_CLIENT_ID, parsed.COPERNICUS_CLIENT_SECRET, parsed.COPERNICUS_RADAR_LOOKBACK_DAYS),
     timeZone: parsed.APP_TIMEZONE,
     scheduleTimes: parseSchedule(parsed.SCHEDULE_TIMES),
     scheduleRetryMinutes: parsed.SCHEDULE_RETRY_MINUTES,
@@ -165,6 +169,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       eventTimeAgreementHours: parsed.EVENT_TIME_AGREEMENT_HOURS,
     },
   };
+}
+
+function resolveCopernicusConfig(clientId: string | undefined, clientSecret: string | undefined, lookbackDays: number) {
+  if (!clientId && !clientSecret) return null;
+  if (!clientId || !clientSecret) throw new Error("COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET must be set together");
+  return { clientId, clientSecret, lookbackDays };
 }
 
 function resolveMaxConfig(token: string | undefined, publicBaseUrl: string | undefined) {

@@ -49,7 +49,9 @@ export class MaxApiClient {
         { name: "weather", description: "Актуальный бюллетень" },
         { name: "details", description: "ECMWF и GFS отдельно" },
         { name: "points", description: "Контрольные точки" },
-        { name: "status", description: "Статус обновления" },
+      { name: "status", description: "Статус обновления" },
+      { name: "clouds", description: "Диагностика облаков" },
+      { name: "radar", description: "Радар Sentinel-1" },
       ],
     }));
     await this.ensureWebhook(webhookUrl, webhookSecret);

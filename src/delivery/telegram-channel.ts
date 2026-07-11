@@ -32,6 +32,8 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "details", description: "ECMWF и GFS отдельно" },
       { command: "points", description: "Контрольные точки" },
       { command: "status", description: "Статус обновления" },
+      { command: "clouds", description: "Диагностика облаков" },
+      { command: "radar", description: "Радар Sentinel-1" },
     ]);
     this.bot.start({
       onStart: ({ username }) => this.logger.info({ username }, "Telegram bot started"),
@@ -110,6 +112,14 @@ export class TelegramChannel implements DeliveryChannel {
       await ctx.reply(`Последнее успешное обновление: ${text}${updatedAt ? " МСК" : ""}.`);
     });
 
+    this.bot.command("clouds", async (ctx) => {
+      await this.sendDiagnostic(ctx.chat.id, () => this.publications.getClouds(), "Диагностический снимок облаков временно недоступен.");
+    });
+
+    this.bot.command("radar", async (ctx) => {
+      await this.sendDiagnostic(ctx.chat.id, () => this.publications.getRadar(), "Радар Sentinel-1 временно недоступен или ещё не настроен.");
+    });
+
     this.bot.catch((error) => {
       const cause = error.error;
       if (cause instanceof GrammyError) {
@@ -171,6 +181,16 @@ export class TelegramChannel implements DeliveryChannel {
     }
     messages.push(...await this.sendContent(recipientId, publication.text));
     return messages;
+  }
+
+  private async sendDiagnostic(chatId: number, getAttachment: () => Promise<import("./types.js").ImageAttachment>, failure: string): Promise<void> {
+    try {
+      const attachment = await getAttachment();
+      await this.bot.api.sendPhoto(chatId, new InputFile(attachment.data, attachment.filename), { caption: attachment.caption });
+    } catch (error) {
+      this.logger.warn({ error }, "Satellite diagnostic request failed");
+      await this.bot.api.sendMessage(chatId, failure);
+    }
   }
 
   private async sendContent(recipientId: string, content: string) {

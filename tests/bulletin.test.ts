@@ -67,6 +67,8 @@ describe("renderBulletin", () => {
       nextScheduledAt: new Date("2026-07-11T08:00:00Z"),
       unavailableModels: ["gfs"],
       warningSourceUnavailable: false,
+      marine: [],
+      marineSourceUnavailable: false,
       timeZone: "Europe/Moscow",
     });
 
@@ -108,6 +110,8 @@ describe("renderBulletin", () => {
       nextScheduledAt: null,
       unavailableModels: [],
       warningSourceUnavailable: false,
+      marine: [],
+      marineSourceUnavailable: false,
       timeZone: "Europe/Moscow",
     });
 

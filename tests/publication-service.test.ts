@@ -68,6 +68,8 @@ describe("PublicationService", () => {
       null,
       null,
       null,
+      null,
+      null,
       "Europe/Moscow",
       { warn: () => undefined } as never,
     );

@@ -2,10 +2,11 @@ import { analyzeForecast } from "../domain/analysis.js";
 import { renderBulletin } from "../domain/bulletin.js";
 import type { BulletinRecord, Database } from "../infrastructure/database.js";
 import type { OpenMeteoClient } from "../infrastructure/open-meteo.js";
+import type { OpenMeteoMarineClient } from "../infrastructure/open-meteo-marine.js";
 import type { StormglassClient } from "../infrastructure/stormglass.js";
 import type { KolgimetClient } from "../infrastructure/kolgimet.js";
 import type { AppConfig } from "../config.js";
-import type { ControlPoint, ForecastValue, WeatherModel } from "../domain/types.js";
+import type { ControlPoint, ForecastValue, MarinePointSummary, WeatherModel } from "../domain/types.js";
 import type { Logger } from "../logger.js";
 import { WEATHER_MODELS } from "../domain/types.js";
 
@@ -18,6 +19,7 @@ export class BulletinService {
   constructor(
     private readonly database: Database,
     private readonly weather: OpenMeteoClient,
+    private readonly marine: OpenMeteoMarineClient,
     private readonly tides: StormglassClient | null,
     private readonly warnings: KolgimetClient,
     private readonly points: ControlPoint[],
@@ -75,6 +77,7 @@ export class BulletinService {
 
       const warningResult = await this.loadWarnings(errors);
       const tideValues = await this.loadTides(startedAt, errors);
+      const marineResult = await this.loadMarine(activePoints, errors);
       const previousSummary = options.kind === "scheduled"
         ? await this.database.getPreviousScheduledSummary()
         : null;
@@ -101,6 +104,8 @@ export class BulletinService {
         nextScheduledAt: this.nextScheduledAt(),
         unavailableModels,
         warningSourceUnavailable: warningResult.unavailable,
+        marine: marineResult.values,
+        marineSourceUnavailable: marineResult.unavailable,
         timeZone: this.config.timeZone,
       });
       const dedupeKey = options.kind === "scheduled" && options.scheduledFor
@@ -156,6 +161,21 @@ export class BulletinService {
       this.logger.warn({ error: message }, "Tide request failed");
     }
     return cached;
+  }
+
+  private async loadMarine(points: ControlPoint[], errors: string[]) {
+    const settled = await Promise.allSettled(points.map((point) => this.marine.getSummary(point)));
+    const values: MarinePointSummary[] = [];
+    for (const [index, result] of settled.entries()) {
+      if (result.status === "fulfilled") values.push(result.value);
+      else {
+        const point = points[index];
+        const message = `Marine/${point?.id ?? "unknown"}: ${errorMessage(result.reason)}`;
+        errors.push(message);
+        this.logger.warn({ error: message }, "Marine forecast request failed");
+      }
+    }
+    return { values, unavailable: values.length === 0 };
   }
 }
 

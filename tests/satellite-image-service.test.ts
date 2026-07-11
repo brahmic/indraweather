@@ -39,13 +39,19 @@ describe("SatelliteImageService", () => {
 });
 
 function createService(client: ReturnType<typeof stubClient>) {
-  return new SatelliteImageService(client as unknown as EumetviewClient, {
-    latitude: 66,
-    longitude: 33,
-    maxAgeMinutes: 90,
-    cacheMinutes: 10,
-    timeZone: "Europe/Moscow",
-  });
+  return new SatelliteImageService(
+    client as unknown as EumetviewClient,
+    {
+      apply: vi.fn(async (image: Uint8Array) => image),
+    } as never,
+    {
+      latitude: 66,
+      longitude: 33,
+      maxAgeMinutes: 90,
+      cacheMinutes: 10,
+      timeZone: "Europe/Moscow",
+    },
+  );
 }
 
 function stubClient(observedAt: Date) {
@@ -57,5 +63,6 @@ function stubClient(observedAt: Date) {
       data: new Uint8Array([137, 80, 78, 71]),
       contentType: "image/png" as const,
     })),
+    getCoastline: vi.fn(async () => [[[30, 64], [36, 68]]]),
   };
 }

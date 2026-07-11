@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { BulletinService } from "./application/bulletin-service.js";
+import { CoastlineOverlayService } from "./application/coastline-overlay-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { PublicationService } from "./application/publication-service.js";
 import { SatelliteImageService } from "./application/satellite-image-service.js";
@@ -32,21 +33,31 @@ const stormglass = config.stormglassApiKey
   : null;
 const kolgimet = new KolgimetClient(config.weatherTimeoutMs, config.weatherRetryCount);
 const satellite = config.satellite.enabled
-  ? new SatelliteImageService(new EumetviewClient({
-    baseUrl: config.satellite.wmsUrl,
-    bbox: config.satellite.bbox,
-    width: config.satellite.width,
-    height: config.satellite.height,
-    timeoutMs: config.weatherTimeoutMs,
-    retries: config.weatherRetryCount,
-    maxImageBytes: config.satellite.maxImageBytes,
-  }), {
-    latitude: 66,
-    longitude: 33,
-    maxAgeMinutes: config.satellite.maxAgeMinutes,
-    cacheMinutes: config.satellite.cacheMinutes,
-    timeZone: config.timeZone,
-  })
+  ? new SatelliteImageService(
+    new EumetviewClient({
+      baseUrl: config.satellite.wmsUrl,
+      wfsUrl: config.satellite.wfsUrl,
+      bbox: config.satellite.bbox,
+      width: config.satellite.width,
+      height: config.satellite.height,
+      timeoutMs: config.weatherTimeoutMs,
+      retries: config.weatherRetryCount,
+      maxImageBytes: config.satellite.maxImageBytes,
+    }),
+    new CoastlineOverlayService({
+      bbox: config.satellite.bbox,
+      width: config.satellite.width,
+      height: config.satellite.height,
+      maxImageBytes: config.satellite.maxImageBytes,
+    }),
+    {
+      latitude: 66,
+      longitude: 33,
+      maxAgeMinutes: config.satellite.maxAgeMinutes,
+      cacheMinutes: config.satellite.cacheMinutes,
+      timeZone: config.timeZone,
+    },
+  )
   : null;
 
 let scheduler: Scheduler;

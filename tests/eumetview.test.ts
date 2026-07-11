@@ -26,6 +26,7 @@ describe("EumetviewClient", () => {
     vi.stubGlobal("fetch", fetchMock);
     const client = new EumetviewClient({
       baseUrl: "https://example.test/wms",
+      wfsUrl: "https://example.test/wfs",
       bbox: [30, 64, 36, 68],
       width: 1000,
       height: 800,
@@ -41,8 +42,40 @@ describe("EumetviewClient", () => {
     expect(image.data).toEqual(png);
     const imageUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
     expect(imageUrl.searchParams.get("bbox")).toBe("30,64,36,68");
-    expect(imageUrl.searchParams.get("layers")).toContain("backgrounds:ne_10m_coastline");
+    expect(imageUrl.searchParams.get("layers")).toBe("mtg_fd:rgb_truecolour");
     expect(imageUrl.searchParams.get("time")).toBe("2026-07-11T02:30:00.000Z");
+  });
+
+  it("loads and normalizes WFS coastline GeoJSON", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request) => new Response(JSON.stringify({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: {
+          type: "MultiLineString",
+          coordinates: [[[30, 64], [33, 66], [36, 68]]],
+        },
+        properties: {},
+      }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new EumetviewClient({
+      baseUrl: "https://example.test/wms",
+      wfsUrl: "https://example.test/wfs",
+      bbox: [30, 64, 36, 68],
+      width: 1000,
+      height: 800,
+      timeoutMs: 1000,
+      retries: 0,
+      maxImageBytes: 1000,
+    });
+
+    expect(await client.getCoastline()).toEqual([[[30, 64], [33, 66], [36, 68]]]);
+    expect(await client.getCoastline()).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/wfs");
+    expect(url.searchParams.get("bbox")).toBe("30,64,36,68,EPSG:4326");
   });
 
   it("rejects an oversized response before reading it", async () => {
@@ -52,6 +85,7 @@ describe("EumetviewClient", () => {
     })));
     const client = new EumetviewClient({
       baseUrl: "https://example.test/wms",
+      wfsUrl: "https://example.test/wfs",
       bbox: [30, 64, 36, 68],
       width: 1000,
       height: 800,

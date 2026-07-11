@@ -1,5 +1,23 @@
 import * as cheerio from "cheerio";
-import { fetchBinary, fetchText } from "./http.js";
+import { z } from "zod";
+import { fetchBinary, fetchJson, fetchText } from "./http.js";
+
+const geoJsonSchema = z.object({
+  features: z.array(z.object({
+    geometry: z.discriminatedUnion("type", [
+      z.object({
+        type: z.literal("LineString"),
+        coordinates: z.array(z.array(z.number()).min(2)),
+      }),
+      z.object({
+        type: z.literal("MultiLineString"),
+        coordinates: z.array(z.array(z.array(z.number()).min(2))),
+      }),
+    ]).nullable(),
+  })),
+});
+
+export type CoastlinePath = Array<[longitude: number, latitude: number]>;
 
 export interface SatelliteLayer {
   name: string;
@@ -9,6 +27,7 @@ export interface SatelliteLayer {
 
 export interface EumetviewOptions {
   baseUrl: string;
+  wfsUrl: string;
   bbox: [number, number, number, number];
   width: number;
   height: number;
@@ -22,6 +41,7 @@ export interface EumetviewOptions {
 export class EumetviewClient {
   readonly dayLayer: SatelliteLayer;
   readonly nightLayer: SatelliteLayer;
+  private coastline: CoastlinePath[] | null = null;
 
   constructor(private readonly options: EumetviewOptions) {
     this.dayLayer = options.dayLayer ?? {
@@ -60,14 +80,12 @@ export class EumetviewClient {
     observedAt: Date,
   ): Promise<{ data: Uint8Array; contentType: "image/png" }> {
     const url = new URL(this.options.baseUrl);
-    const layers = [layer.name, "backgrounds:ne_10m_coastline"];
-    const styles = [layer.style ?? "", "line"];
     url.search = new URLSearchParams({
       service: "WMS",
       version: "1.1.1",
       request: "GetMap",
-      layers: layers.join(","),
-      styles: styles.join(","),
+      layers: layer.name,
+      styles: layer.style ?? "",
       srs: "EPSG:4326",
       bbox: this.options.bbox.join(","),
       width: String(this.options.width),
@@ -80,6 +98,35 @@ export class EumetviewClient {
       throw new Error(`Unexpected EUMETView content type: ${result.contentType}`);
     }
     return { data: result.data, contentType: "image/png" };
+  }
+
+  async getCoastline(): Promise<CoastlinePath[]> {
+    if (this.coastline) return this.coastline;
+    const url = new URL(this.options.wfsUrl);
+    url.search = new URLSearchParams({
+      service: "WFS",
+      version: "2.0.0",
+      request: "GetFeature",
+      typeNames: "backgrounds:ne_10m_coastline",
+      outputFormat: "application/json",
+      srsName: "EPSG:4326",
+      bbox: `${this.options.bbox.join(",")},EPSG:4326`,
+    }).toString();
+    const geoJson = geoJsonSchema.parse(await fetchJson(url, this.requestOptions()));
+    const coastline = geoJson.features.flatMap((feature): CoastlinePath[] => {
+      const geometry = feature.geometry;
+      if (!geometry) return [];
+      const lines = geometry.type === "LineString"
+        ? [geometry.coordinates]
+        : geometry.coordinates;
+      return lines.map((line) => line.map((coordinate) => [
+        coordinate[0] ?? 0,
+        coordinate[1] ?? 0,
+      ]));
+    }).filter((line) => line.length > 1);
+    if (coastline.length === 0) throw new Error("EUMETView coastline response is empty");
+    this.coastline = coastline;
+    return coastline;
   }
 
   private requestOptions() {

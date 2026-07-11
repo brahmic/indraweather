@@ -30,6 +30,7 @@ const envSchema = z.object({
   SATELLITE_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   SATELLITE_WMS_URL: z.url().default("https://view.eumetsat.int/geoserver/wms"),
+  SATELLITE_WFS_URL: z.url().default("https://view.eumetsat.int/geoserver/wfs"),
   SATELLITE_BBOX: z.string().default("30,64,36,68"),
   SATELLITE_WIDTH: z.coerce.number().int().min(320).max(2000).default(1000),
   SATELLITE_HEIGHT: z.coerce.number().int().min(240).max(2000).default(800),
@@ -91,6 +92,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     satellite: {
       enabled: parsed.SATELLITE_ENABLED,
       wmsUrl: parsed.SATELLITE_WMS_URL,
+      wfsUrl: parsed.SATELLITE_WFS_URL,
       bbox: parseBoundingBox(parsed.SATELLITE_BBOX),
       width: parsed.SATELLITE_WIDTH,
       height: parsed.SATELLITE_HEIGHT,

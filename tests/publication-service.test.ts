@@ -55,6 +55,6 @@ describe("PublicationService", () => {
 
     const publication = await service.getFreshOrRun();
 
-    expect(publication.text).toBe("weather\n\nПодробности по моделям: /details");
+    expect(publication.text).toBe("weather\n\nПодробности по моделям:\n/details");
   });
 });

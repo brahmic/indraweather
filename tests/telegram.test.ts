@@ -22,14 +22,15 @@ describe("formatTelegramPost", () => {
       "",
       "Кемский рейд: ветер 3–7 м/с.",
       "Источник: https://example.test/?a=1&b=2",
-      "Подробности по моделям: /details",
+      "Подробности по моделям:",
+      "/details",
     ].join("\n"), ["Кемский рейд"]);
 
     expect(formatted).toContain("🌊 <b>Кемь — Кандалакша");
     expect(formatted).toContain("📌 <b>Главное:</b> ветер &lt;сильный&gt;.");
     expect(formatted).toContain("📍 <b>Кемский рейд:</b> ветер 3–7 м/с.");
     expect(formatted).toContain("a=1&amp;b=2");
-    expect(formatted).toContain("🔬 <b>Подробности по моделям:</b> /details");
+    expect(formatted).toContain("🔬 <b>Подробности по моделям:</b>\n/details");
   });
 
   it("formats model detail blocks with indentation", () => {

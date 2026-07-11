@@ -138,7 +138,7 @@ export class SatelliteAnimationService {
     const first = ready[0];
     const last = ready.at(-1);
     if (!first || !last) return null;
-    const filename = `animation-v2-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
+    const filename = `animation-v3-${fileTime(first.observedAt)}-${fileTime(last.observedAt)}-${ready.length}.mp4`;
     const outputPath = this.store.path(filename);
     if (!await fileExists(outputPath)) {
       const temporaryPath = this.store.path(`.${filename}.tmp.mp4`);

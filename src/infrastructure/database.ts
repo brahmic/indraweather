@@ -12,6 +12,7 @@ import type {
 export interface BulletinRecord {
   id: string;
   content: string;
+  contentFormat: "plain" | "telegram_html";
   summary: BulletinSummary;
   createdAt: Date;
 }
@@ -250,26 +251,30 @@ export class Database {
     const inserted = await this.pool.query<{
       id: string;
       content: string;
+      content_format: "plain" | "telegram_html";
       summary: unknown;
       created_at: Date;
     }>(`
-      INSERT INTO bulletins (run_id, kind, dedupe_key, content, summary)
-      VALUES ($1, $2, $3, $4, $5::jsonb)
+      INSERT INTO bulletins (run_id, kind, dedupe_key, content, content_format, summary)
+      VALUES ($1, $2, $3, $4, 'plain', $5::jsonb)
       ON CONFLICT (dedupe_key) DO NOTHING
-      RETURNING id, content, summary, created_at
+      RETURNING id, content, content_format, summary, created_at
     `, [runId, kind, dedupeKey, content, JSON.stringify(summary)]);
     const row = inserted.rows[0] ?? (await this.pool.query<{
       id: string;
       content: string;
+      content_format: "plain" | "telegram_html";
       summary: unknown;
       created_at: Date;
     }>(`
-      SELECT id, content, summary, created_at FROM bulletins WHERE dedupe_key = $1
+      SELECT id, content, content_format, summary, created_at
+      FROM bulletins WHERE dedupe_key = $1
     `, [dedupeKey])).rows[0];
     if (!row) throw new Error("Failed to save or load bulletin");
     return {
       id: row.id,
       content: row.content,
+      contentFormat: row.content_format,
       summary: reviveSummary(row.summary),
       createdAt: row.created_at,
     };
@@ -279,16 +284,18 @@ export class Database {
     const result = await this.pool.query<{
       id: string;
       content: string;
+      content_format: "plain" | "telegram_html";
       summary: unknown;
       created_at: Date;
     }>(`
-      SELECT id, content, summary, created_at
+      SELECT id, content, content_format, summary, created_at
       FROM bulletins ORDER BY created_at DESC LIMIT 1
     `);
     const row = result.rows[0];
     return row ? {
       id: row.id,
       content: row.content,
+      contentFormat: row.content_format,
       summary: reviveSummary(row.summary),
       createdAt: row.created_at,
     } : null;
@@ -303,58 +310,67 @@ export class Database {
     return result.rows[0]?.completed_at ?? null;
   }
 
-  async subscribe(chatId: number): Promise<void> {
+  async subscribe(channel: string, recipientId: string): Promise<void> {
     await this.pool.query(`
-      INSERT INTO subscribers (chat_id) VALUES ($1)
-      ON CONFLICT (chat_id) DO UPDATE SET
+      INSERT INTO delivery_subscriptions (channel, recipient_id) VALUES ($1, $2)
+      ON CONFLICT (channel, recipient_id) DO UPDATE SET
         active = true, unsubscribed_at = NULL, updated_at = now()
-    `, [chatId]);
+    `, [channel, recipientId]);
   }
 
-  async unsubscribe(chatId: number): Promise<void> {
+  async unsubscribe(channel: string, recipientId: string): Promise<void> {
     await this.pool.query(`
-      UPDATE subscribers
+      UPDATE delivery_subscriptions
       SET active = false, unsubscribed_at = now(), updated_at = now()
-      WHERE chat_id = $1
-    `, [chatId]);
+      WHERE channel = $1 AND recipient_id = $2
+    `, [channel, recipientId]);
   }
 
-  async getActiveSubscriberIds(): Promise<number[]> {
-    const result = await this.pool.query<{ chat_id: string }>(`
-      SELECT chat_id FROM subscribers WHERE active = true ORDER BY chat_id
-    `);
-    return result.rows.map((row) => Number(row.chat_id));
+  async getActiveRecipientIds(channel: string): Promise<string[]> {
+    const result = await this.pool.query<{ recipient_id: string }>(`
+      SELECT recipient_id FROM delivery_subscriptions
+      WHERE channel = $1 AND active = true
+      ORDER BY recipient_id
+    `, [channel]);
+    return result.rows.map((row) => row.recipient_id);
   }
 
   async markDelivery(
     bulletinId: string,
-    chatId: number,
+    channel: string,
+    recipientId: string,
     status: "sent" | "failed",
-    messageId: number | null,
+    externalMessageId: string | null,
     error: string | null,
   ): Promise<void> {
     await this.pool.query(`
       INSERT INTO deliveries
-        (bulletin_id, chat_id, status, attempts, telegram_message_id, last_error, sent_at)
-      VALUES ($1, $2, $3, 1, $4, $5, CASE WHEN $3 = 'sent' THEN now() ELSE NULL END)
-      ON CONFLICT (bulletin_id, chat_id) DO UPDATE SET
+        (bulletin_id, channel, recipient_id, status, attempts,
+         external_message_id, last_error, sent_at)
+      VALUES ($1, $2, $3, $4, 1, $5, $6,
+        CASE WHEN $4 = 'sent' THEN now() ELSE NULL END)
+      ON CONFLICT (bulletin_id, channel, recipient_id) DO UPDATE SET
         status = EXCLUDED.status,
-        telegram_message_id = EXCLUDED.telegram_message_id,
+        external_message_id = EXCLUDED.external_message_id,
         last_error = EXCLUDED.last_error,
         sent_at = EXCLUDED.sent_at,
         updated_at = now()
-    `, [bulletinId, chatId, status, messageId, error]);
+    `, [bulletinId, channel, recipientId, status, externalMessageId, error]);
   }
 
-  async claimDelivery(bulletinId: string, chatId: number): Promise<boolean> {
+  async claimDelivery(
+    bulletinId: string,
+    channel: string,
+    recipientId: string,
+  ): Promise<boolean> {
     const result = await this.pool.query(`
-      INSERT INTO deliveries (bulletin_id, chat_id, status, attempts)
-      VALUES ($1, $2, 'pending', 1)
-      ON CONFLICT (bulletin_id, chat_id) DO UPDATE SET
+      INSERT INTO deliveries (bulletin_id, channel, recipient_id, status, attempts)
+      VALUES ($1, $2, $3, 'pending', 1)
+      ON CONFLICT (bulletin_id, channel, recipient_id) DO UPDATE SET
         status = 'pending', attempts = deliveries.attempts + 1, updated_at = now()
       WHERE deliveries.status = 'failed'
       RETURNING 1
-    `, [bulletinId, chatId]);
+    `, [bulletinId, channel, recipientId]);
     return Boolean(result.rowCount);
   }
 

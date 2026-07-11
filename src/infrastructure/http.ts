@@ -14,6 +14,26 @@ export async function fetchJson(url: URL | string, options: FetchOptions): Promi
   return response.json();
 }
 
+export async function fetchBinary(
+  url: URL | string,
+  options: FetchOptions,
+  maxBytes: number,
+): Promise<{ data: Uint8Array; contentType: string }> {
+  const response = await fetchWithRetry(url, options);
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error(`Response from ${url} exceeds ${maxBytes} bytes`);
+  }
+  const data = new Uint8Array(await response.arrayBuffer());
+  if (data.byteLength > maxBytes) {
+    throw new Error(`Response from ${url} exceeds ${maxBytes} bytes`);
+  }
+  return {
+    data,
+    contentType: response.headers.get("content-type")?.split(";", 1)[0] ?? "",
+  };
+}
+
 async function fetchWithRetry(
   url: URL | string,
   options: FetchOptions,

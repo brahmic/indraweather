@@ -22,11 +22,13 @@
     "grammy": "^1.44.0",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
+    "suncalc": "^2.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
+    "@types/suncalc": "^1.9.2",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"

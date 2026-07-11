@@ -29,7 +29,8 @@ export class BulletinService {
   async getFreshOrRun(): Promise<BulletinRecord> {
     const latest = await this.database.getLatestBulletin();
     const freshnessMs = this.config.freshForecastMinutes * 60_000;
-    if (latest && Date.now() - latest.createdAt.getTime() <= freshnessMs) return latest;
+    if (latest?.contentFormat === "plain"
+      && Date.now() - latest.createdAt.getTime() <= freshnessMs) return latest;
     const generated = await this.run({ kind: "manual" });
     if (generated) return generated;
     const fallback = await this.database.getLatestBulletin();

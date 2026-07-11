@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitMessage } from "../src/telegram.js";
+import { splitMessage } from "../src/delivery/telegram-channel.js";
 
 describe("splitMessage", () => {
   it("splits on line boundaries within Telegram limit", () => {

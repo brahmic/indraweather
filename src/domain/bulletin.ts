@@ -20,28 +20,28 @@ export interface BulletinInput {
 export function renderBulletin(input: BulletinInput): string {
   const generatedAt = new Date(input.summary.generatedAt);
   const lines: string[] = [
-    `<b>Кемь — Кандалакша · ${formatDateTime(generatedAt, input.timeZone)}</b>`,
+    `Кемь — Кандалакша · ${formatDateTime(generatedAt, input.timeZone)}`,
   ];
 
   if (input.warnings.length > 0) {
     for (const warning of input.warnings) {
       lines.push(
         "",
-        "<b>Официальное предупреждение</b>",
-        escapeHtml(warning.rawText),
-        `Источник: <a href="${escapeHtml(warning.sourceUrl)}">${escapeHtml(warning.source)}</a>`,
+        "Официальное предупреждение",
+        warning.rawText,
+        `Источник: ${warning.source} — ${warning.sourceUrl}`,
       );
     }
   }
   if (input.warningSourceUnavailable) {
-    lines.push("", "<b>Официальные предупреждения:</b> источник временно недоступен, актуальность не подтверждена.");
+    lines.push("", "Официальные предупреждения: источник временно недоступен, актуальность не подтверждена.");
   }
 
   if (input.unavailableModels.length > 0) {
-    lines.push("", `<b>Неполные данные:</b> ${escapeHtml(input.unavailableModels.join(", "))}.`);
+    lines.push("", `Неполные данные: ${input.unavailableModels.join(", ")}.`);
   }
 
-  lines.push("", `<b>Главное:</b> ${renderMainChange(input.summary, input.timeZone)}`);
+  lines.push("", `Главное: ${renderMainChange(input.summary, input.timeZone)}`);
 
   for (const point of input.summary.pointSummaries) {
     const gust = point.maxGustMs === null ? "нет данных" : `до ${round(point.maxGustMs)} м/с`;
@@ -57,18 +57,18 @@ export function renderBulletin(input: BulletinInput): string {
       extras.push(`температура ${formatSigned(Math.min(...temperatures))}…${formatSigned(Math.max(...temperatures))} °C`);
     }
     lines.push(
-      `<b>${escapeHtml(point.point.name)}:</b> ветер ${round(point.minWindMs)}–${round(point.maxWindMs)} м/с, порывы ${gust}${extras.length ? `; ${extras.join(", ")}` : ""}.`,
+      `${point.point.name}: ветер ${round(point.minWindMs)}–${round(point.maxWindMs)} м/с, порывы ${gust}${extras.length ? `; ${extras.join(", ")}` : ""}.`,
     );
   }
 
-  lines.push("", `<b>Поворот ветра:</b> ${renderDirectionTurn(input.summary)}.`);
-  lines.push("", `<b>Модели:</b> ${renderAgreement(input.summary)}`);
-  lines.push(`<b>Давление:</b> ${renderPressure(input.summary)}.`);
-  lines.push(`<b>Следующие 24 часа:</b> ${renderOutlook(input.summary)}.`);
-  lines.push(`<b>Прилив:</b> ${renderTide(input.tides, generatedAt, input.timeZone)}`);
-  lines.push(`<b>Изменение:</b> ${renderPreviousDifference(input.summary, input.previousSummary)}.`);
+  lines.push("", `Поворот ветра: ${renderDirectionTurn(input.summary)}.`);
+  lines.push("", `Модели: ${renderAgreement(input.summary)}`);
+  lines.push(`Давление: ${renderPressure(input.summary)}.`);
+  lines.push(`Следующие 24 часа: ${renderOutlook(input.summary)}.`);
+  lines.push(`Прилив: ${renderTide(input.tides, generatedAt, input.timeZone)}`);
+  lines.push(`Изменение: ${renderPreviousDifference(input.summary, input.previousSummary)}.`);
   if (input.nextScheduledAt) {
-    lines.push(`<b>Следующий выпуск:</b> ${formatDateTime(input.nextScheduledAt, input.timeZone)}.`);
+    lines.push(`Следующий выпуск: ${formatDateTime(input.nextScheduledAt, input.timeZone)}.`);
   }
   lines.push("", "Данные: Open-Meteo (ECMWF, NOAA GFS); приливы: Stormglass.");
   return lines.join("\n");
@@ -89,7 +89,7 @@ function renderDirectionTurn(summary: BulletinSummary): string {
     .sort((left, right) => right.angle - left.angle);
   const turn = turns[0];
   if (!turn) return "заметный поворот не выделяется";
-  return `${escapeHtml(turn.point)}: ${windDirectionLabel(turn.start)} → ${windDirectionLabel(turn.end)}`;
+  return `${turn.point}: ${windDirectionLabel(turn.start)} → ${windDirectionLabel(turn.end)}`;
 }
 
 function renderOutlook(summary: BulletinSummary): string {
@@ -110,10 +110,10 @@ function renderMainChange(summary: BulletinSummary, timeZone: string): string {
   if (!strongest || !strongest.model.windChangeAt) {
     const windiest = summary.pointSummaries.reduce((left, right) =>
       left.maxWindMs >= right.maxWindMs ? left : right);
-    return `наибольший ветер ожидается в точке «${escapeHtml(windiest.point.name)}» — до ${round(windiest.maxWindMs)} м/с.`;
+    return `наибольший ветер ожидается в точке «${windiest.point.name}» — до ${round(windiest.maxWindMs)} м/с.`;
   }
   const action = strongest.model.windChangeMs > 0 ? "усиление" : "ослабление";
-  return `${action} ветра у точки «${escapeHtml(strongest.point)}» около ${formatTime(strongest.model.windChangeAt, timeZone)}.`;
+  return `${action} ветра у точки «${strongest.point}» около ${formatTime(strongest.model.windChangeAt, timeZone)}.`;
 }
 
 function renderAgreement(summary: BulletinSummary): string {

@@ -27,6 +27,15 @@ const envSchema = z.object({
   DIRECTION_CHANGE_THRESHOLD_DEG: z.coerce.number().min(0).max(180).default(45),
   DIRECTION_AGREEMENT_THRESHOLD_DEG: z.coerce.number().min(0).max(180).default(45),
   EVENT_TIME_AGREEMENT_HOURS: z.coerce.number().positive().default(2),
+  SATELLITE_ENABLED: z.enum(["true", "false"]).default("true")
+    .transform((value) => value === "true"),
+  SATELLITE_WMS_URL: z.url().default("https://view.eumetsat.int/geoserver/wms"),
+  SATELLITE_BBOX: z.string().default("30,64,36,68"),
+  SATELLITE_WIDTH: z.coerce.number().int().min(320).max(2000).default(1000),
+  SATELLITE_HEIGHT: z.coerce.number().int().min(240).max(2000).default(800),
+  SATELLITE_MAX_AGE_MINUTES: z.coerce.number().int().positive().default(90),
+  SATELLITE_CACHE_MINUTES: z.coerce.number().int().positive().default(10),
+  SATELLITE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(9_000_000),
 });
 
 const pointSchema = z.object({
@@ -79,6 +88,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     freshForecastMinutes: parsed.FRESH_FORECAST_MINUTES,
     weatherTimeoutMs: parsed.WEATHER_TIMEOUT_MS,
     weatherRetryCount: parsed.WEATHER_RETRY_COUNT,
+    satellite: {
+      enabled: parsed.SATELLITE_ENABLED,
+      wmsUrl: parsed.SATELLITE_WMS_URL,
+      bbox: parseBoundingBox(parsed.SATELLITE_BBOX),
+      width: parsed.SATELLITE_WIDTH,
+      height: parsed.SATELLITE_HEIGHT,
+      maxAgeMinutes: parsed.SATELLITE_MAX_AGE_MINUTES,
+      cacheMinutes: parsed.SATELLITE_CACHE_MINUTES,
+      maxImageBytes: parsed.SATELLITE_MAX_IMAGE_BYTES,
+    },
     thresholds: {
       windChangeMs: parsed.WIND_CHANGE_THRESHOLD_MS,
       windAgreementMs: parsed.WIND_AGREEMENT_THRESHOLD_MS,
@@ -88,6 +107,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       eventTimeAgreementHours: parsed.EVENT_TIME_AGREEMENT_HOURS,
     },
   };
+}
+
+function parseBoundingBox(value: string): [number, number, number, number] {
+  const numbers = value.split(",").map((item) => Number(item.trim()));
+  if (numbers.length !== 4 || numbers.some((item) => !Number.isFinite(item))) {
+    throw new Error("SATELLITE_BBOX must contain west,south,east,north");
+  }
+  const [west, south, east, north] = numbers;
+  if (west === undefined || south === undefined || east === undefined || north === undefined
+    || west >= east || south >= north
+    || west < -180 || east > 180 || south < -90 || north > 90) {
+    throw new Error("SATELLITE_BBOX contains invalid coordinates");
+  }
+  return [west, south, east, north];
 }
 
 function resolveDatabaseUrl(parsed: z.infer<typeof envSchema>): string {

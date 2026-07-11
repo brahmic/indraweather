@@ -52,7 +52,7 @@ const summary: BulletinSummary = {
 };
 
 describe("renderBulletin", () => {
-  it("renders local Moscow time and escapes external text", () => {
+  it("renders local Moscow time as channel-neutral plain text", () => {
     const result = renderBulletin({
       summary,
       warnings: [{
@@ -72,8 +72,9 @@ describe("renderBulletin", () => {
 
     expect(result).toContain("08:00 МСК");
     expect(result).toContain("11:00 МСК");
-    expect(result).toContain("Ветер &lt;сильный&gt;");
-    expect(result).toContain("Точка &lt;1&gt;");
+    expect(result).toContain("Ветер <сильный>");
+    expect(result).toContain("Точка <1>");
+    expect(result).not.toContain("<b>");
   });
 });
 

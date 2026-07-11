@@ -24,4 +24,16 @@ describe("loadConfig", () => {
   it("fails when no database connection is configured", () => {
     expect(() => loadConfig({})).toThrow(/DATABASE_URL|DATABASE_HOST/u);
   });
+
+  it("validates and parses the satellite bounding box", () => {
+    const config = loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      SATELLITE_BBOX: "30,64,36,68",
+    });
+    expect(config.satellite.bbox).toEqual([30, 64, 36, 68]);
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      SATELLITE_BBOX: "36,64,30,68",
+    })).toThrow(/SATELLITE_BBOX/u);
+  });
 });

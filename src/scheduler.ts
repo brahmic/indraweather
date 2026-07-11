@@ -1,7 +1,7 @@
 import { Cron } from "croner";
-import type { BulletinService } from "./application/bulletin-service.js";
+import type { DeliveryService } from "./application/delivery-service.js";
+import type { PublicationService } from "./application/publication-service.js";
 import type { Logger } from "./logger.js";
-import type { TelegramService } from "./telegram.js";
 
 export class Scheduler {
   private readonly jobs: Cron[];
@@ -11,8 +11,8 @@ export class Scheduler {
     scheduleTimes: string[],
     timeZone: string,
     private readonly retryMinutes: number,
-    private readonly bulletins: BulletinService,
-    private readonly telegram: TelegramService | null,
+    private readonly publications: PublicationService,
+    private readonly delivery: DeliveryService,
     private readonly logger: Logger,
   ) {
     this.jobs = scheduleTimes.map((time) => {
@@ -47,8 +47,8 @@ export class Scheduler {
 
   private async execute(scheduledFor: Date, allowRetry: boolean): Promise<void> {
     try {
-      const bulletin = await this.bulletins.run({ kind: "scheduled", scheduledFor });
-      if (bulletin && this.telegram) await this.telegram.broadcast(bulletin);
+      const publication = await this.publications.run({ kind: "scheduled", scheduledFor });
+      if (publication) await this.delivery.broadcast(publication);
     } catch (error) {
       this.logger.error({ error, scheduledFor }, "Scheduled bulletin failed");
       if (!allowRetry) return;

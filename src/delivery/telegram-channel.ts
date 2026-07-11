@@ -1,18 +1,20 @@
-import { Bot, GrammyError, HttpError } from "grammy";
-import type { BulletinService } from "./application/bulletin-service.js";
-import type { AppConfig } from "./config.js";
-import { escapeHtml } from "./domain/bulletin.js";
-import type { ControlPoint } from "./domain/types.js";
-import type { BulletinRecord, Database } from "./infrastructure/database.js";
-import type { Logger } from "./logger.js";
+import { Bot, GrammyError, HttpError, InputFile } from "grammy";
+import type { PublicationService } from "../application/publication-service.js";
+import type { AppConfig } from "../config.js";
+import type { DeliveryChannel, Publication } from "./types.js";
+import { escapeHtml } from "../domain/bulletin.js";
+import type { ControlPoint } from "../domain/types.js";
+import type { Database } from "../infrastructure/database.js";
+import type { Logger } from "../logger.js";
 
-export class TelegramService {
+export class TelegramChannel implements DeliveryChannel {
+  readonly id = "telegram";
   readonly bot: Bot;
 
   constructor(
     token: string,
     private readonly database: Database,
-    private readonly bulletins: BulletinService,
+    private readonly publications: PublicationService,
     private readonly points: ControlPoint[],
     private readonly config: AppConfig,
     private readonly logger: Logger,
@@ -38,9 +40,11 @@ export class TelegramService {
     await this.bot.stop();
   }
 
-  async broadcast(bulletin: BulletinRecord): Promise<void> {
-    const chatIds = await this.database.getActiveSubscriberIds();
-    await Promise.allSettled(chatIds.map((chatId) => this.deliver(chatId, bulletin)));
+  async broadcast(publication: Publication): Promise<void> {
+    const recipientIds = await this.database.getActiveRecipientIds(this.id);
+    await Promise.allSettled(
+      recipientIds.map((recipientId) => this.deliver(recipientId, publication)),
+    );
   }
 
   private registerHandlers(): void {
@@ -49,22 +53,22 @@ export class TelegramService {
         await ctx.reply("Подписка доступна только в личном чате с ботом.");
         return;
       }
-      await this.database.subscribe(ctx.chat.id);
+      await this.database.subscribe(this.id, String(ctx.chat.id));
       await ctx.reply(
         "Подписка включена. Бюллетени приходят ежедневно в 05:00, 11:00, 17:00 и 23:00 МСК. Отключить: /stop",
       );
     });
 
     this.bot.command("stop", async (ctx) => {
-      await this.database.unsubscribe(ctx.chat.id);
+      await this.database.unsubscribe(this.id, String(ctx.chat.id));
       await ctx.reply("Автоматические уведомления отключены. Возобновить: /start");
     });
 
     this.bot.command("weather", async (ctx) => {
       await ctx.replyWithChatAction("typing");
       try {
-        const bulletin = await this.bulletins.getFreshOrRun();
-        await this.sendContent(ctx.chat.id, bulletin.content);
+        const publication = await this.publications.getFreshOrRun();
+        await this.sendPublication(String(ctx.chat.id), publication);
       } catch (error) {
         this.logger.error({ error }, "Manual bulletin failed");
         await ctx.reply("Не удалось сформировать бюллетень: погодные данные временно недоступны.");
@@ -101,34 +105,56 @@ export class TelegramService {
     });
   }
 
-  private async deliver(chatId: number, bulletin: BulletinRecord): Promise<void> {
-    if (!await this.database.claimDelivery(bulletin.id, chatId)) return;
+  private async deliver(recipientId: string, publication: Publication): Promise<void> {
+    if (!await this.database.claimDelivery(publication.id, this.id, recipientId)) return;
     try {
-      const messages = await this.sendContent(chatId, bulletin.content);
+      const messages = await this.sendPublication(recipientId, publication);
       const lastMessage = messages.at(-1);
       await this.database.markDelivery(
-        bulletin.id,
-        chatId,
+        publication.id,
+        this.id,
+        recipientId,
         "sent",
-        lastMessage?.message_id ?? null,
+        lastMessage ? String(lastMessage.message_id) : null,
         null,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.database.markDelivery(bulletin.id, chatId, "failed", null, message.slice(0, 2000));
+      await this.database.markDelivery(
+        publication.id,
+        this.id,
+        recipientId,
+        "failed",
+        null,
+        message.slice(0, 2000),
+      );
       if (/bot was blocked|chat not found|user is deactivated/iu.test(message)) {
-        await this.database.unsubscribe(chatId);
+        await this.database.unsubscribe(this.id, recipientId);
       }
-      this.logger.warn({ chatId, error: message }, "Telegram delivery failed");
+      this.logger.warn({ recipientId, error: message }, "Telegram delivery failed");
     }
   }
 
-  private async sendContent(chatId: number, content: string) {
+  private async sendPublication(recipientId: string, publication: Publication) {
+    const messages = [];
+    for (const attachment of publication.attachments) {
+      if (attachment.kind === "image") {
+        messages.push(await this.bot.api.sendPhoto(
+          recipientId,
+          new InputFile(attachment.data, attachment.filename),
+          { caption: attachment.caption },
+        ));
+      }
+    }
+    messages.push(...await this.sendContent(recipientId, publication.text));
+    return messages;
+  }
+
+  private async sendContent(recipientId: string, content: string) {
     const chunks = splitMessage(content, 3900);
     const messages = [];
     for (const chunk of chunks) {
-      messages.push(await this.bot.api.sendMessage(chatId, chunk, {
-        parse_mode: "HTML",
+      messages.push(await this.bot.api.sendMessage(recipientId, chunk, {
         link_preview_options: { is_disabled: true },
       }));
     }

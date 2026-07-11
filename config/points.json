@@ -1,0 +1,42 @@
+[
+  {
+    "id": "kem-roadstead",
+    "name": "Кемский рейд",
+    "latitude": 64.983,
+    "longitude": 34.748,
+    "order": 10,
+    "active": true
+  },
+  {
+    "id": "kuzema-bay",
+    "name": "Куземская губа",
+    "latitude": 65.511,
+    "longitude": 33.335,
+    "order": 20,
+    "active": true
+  },
+  {
+    "id": "chupa-bay",
+    "name": "Чупинская губа",
+    "latitude": 66.285,
+    "longitude": 33.255,
+    "order": 30,
+    "active": true
+  },
+  {
+    "id": "kovda-bay",
+    "name": "Ковдинская губа",
+    "latitude": 66.693,
+    "longitude": 32.87,
+    "order": 40,
+    "active": true
+  },
+  {
+    "id": "kandalaksha-roadstead",
+    "name": "Кандалакшский рейд",
+    "latitude": 67.133,
+    "longitude": 32.425,
+    "order": 50,
+    "active": true
+  }
+]

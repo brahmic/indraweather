@@ -1,0 +1,150 @@
+import { Bot } from "@maxhub/max-bot-api";
+import { z } from "zod";
+
+export const MAX_API_BASE_URL = "https://platform-api2.max.ru";
+
+const actionSchema = z.object({ success: z.boolean(), message: z.string().optional() });
+const botInfoSchema = z.object({
+  name: z.string(),
+  username: z.string().nullable().optional(),
+});
+const messageSchema = z.object({
+  message: z.object({ body: z.object({ mid: z.string() }) }),
+});
+
+class MaxApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(`MAX API ${status} ${code}: ${message}`);
+  }
+}
+
+export interface MaxMessageAttachment {
+  type: "image";
+  payload: object;
+}
+
+export class MaxApiClient {
+  private readonly bot: Bot;
+
+  constructor(
+    private readonly token: string,
+    private readonly timeoutMs = 20_000,
+  ) {
+    this.bot = new Bot(token, { clientOptions: { baseUrl: MAX_API_BASE_URL } });
+  }
+
+  async initialize(webhookUrl: string, webhookSecret: string): Promise<string> {
+    const info = botInfoSchema.parse(await this.request("GET", "/me"));
+    assertAction(actionSchema.parse(await this.request("PATCH", "/me/commands", {
+      commands: [
+        { name: "start", description: "Подписаться на бюллетени" },
+        { name: "stop", description: "Отключить уведомления" },
+        { name: "weather", description: "Актуальный бюллетень" },
+        { name: "details", description: "ECMWF и GFS отдельно" },
+        { name: "points", description: "Контрольные точки" },
+        { name: "status", description: "Статус обновления" },
+      ],
+    })));
+    await this.ensureWebhook(webhookUrl, webhookSecret);
+    return info.username ?? info.name;
+  }
+
+  async uploadImage(data: Uint8Array): Promise<MaxMessageAttachment> {
+    const attachment = await this.bot.api.uploadImage({ source: Buffer.from(data), timeout: 60_000 });
+    return attachment.toJson();
+  }
+
+  async sendMessage(
+    userId: number,
+    text: string,
+    attachments: MaxMessageAttachment[] = [],
+  ): Promise<string> {
+    const result = messageSchema.parse(await this.withAttachmentRetry(() => this.request(
+      "POST",
+      "/messages",
+      {
+        text,
+        format: "html",
+        ...(attachments.length > 0 ? { attachments } : {}),
+      },
+      { user_id: userId, disable_link_preview: true },
+    )));
+    return result.message.body.mid;
+  }
+
+  async editMessage(messageId: string, text: string): Promise<void> {
+    assertAction(actionSchema.parse(await this.request(
+      "PUT",
+      "/messages",
+      { text, format: "html" },
+      { message_id: messageId },
+    )));
+  }
+
+  async deleteMessage(messageId: string): Promise<void> {
+    assertAction(actionSchema.parse(await this.request(
+      "DELETE",
+      "/messages",
+      undefined,
+      { message_id: messageId },
+    )));
+  }
+
+  private async ensureWebhook(webhookUrl: string, webhookSecret: string): Promise<void> {
+    const result = actionSchema.parse(await this.request("POST", "/subscriptions", {
+      url: webhookUrl,
+      update_types: ["message_created", "bot_started", "bot_stopped"],
+      secret: webhookSecret,
+    }));
+    if (!result.success) throw new Error(`MAX webhook registration failed: ${result.message ?? "unknown error"}`);
+  }
+
+  private async request(
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+    path: string,
+    body?: object,
+    query: Record<string, string | number | boolean> = {},
+  ): Promise<unknown> {
+    const url = new URL(path, MAX_API_BASE_URL);
+    for (const [name, value] of Object.entries(query)) url.searchParams.set(name, String(value));
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: this.token,
+        ...(body ? { "content-type": "application/json" } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    const data: unknown = await response.json();
+    if (!response.ok) {
+      const error = z.object({ code: z.string(), message: z.string() }).safeParse(data);
+      throw error.success
+        ? new MaxApiError(response.status, error.data.code, error.data.message)
+        : new Error(`MAX API ${method} ${path} returned ${response.status}: ${JSON.stringify(data)}`);
+    }
+    return data;
+  }
+
+  private async withAttachmentRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (!(error instanceof MaxApiError) || error.code !== "attachment.not.ready") throw error;
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 500 * 2 ** attempt));
+      }
+    }
+    throw lastError;
+  }
+}
+
+function assertAction(result: z.infer<typeof actionSchema>): void {
+  if (!result.success) throw new Error(`MAX action failed: ${result.message ?? "unknown error"}`);
+}

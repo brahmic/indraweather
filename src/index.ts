@@ -19,6 +19,8 @@ import { StormglassClient } from "./infrastructure/stormglass.js";
 import { createLogger } from "./logger.js";
 import { Scheduler } from "./scheduler.js";
 import { TelegramChannel } from "./delivery/telegram-channel.js";
+import { MaxChannel } from "./delivery/max-channel.js";
+import { MaxApiClient } from "./infrastructure/max-api.js";
 
 const config = loadConfig();
 const logger = createLogger(config.logLevel);
@@ -141,6 +143,19 @@ if (config.telegramBotToken) {
     logger,
   ));
 }
+const maxChannel = config.max
+  ? new MaxChannel(
+    config.max.token,
+    config.max.publicBaseUrl,
+    database,
+    publicationService,
+    points,
+    config,
+    new MaxApiClient(config.max.token),
+    logger,
+  )
+  : null;
+if (maxChannel) channels.push(maxChannel);
 const deliveryService = new DeliveryService(channels, logger);
 scheduler = new Scheduler(
   config.scheduleTimes,
@@ -151,10 +166,11 @@ scheduler = new Scheduler(
   logger,
 );
 
-const healthServer = startHealthServer(database, config.port, logger);
+const healthServer = startHealthServer(database, config.port, logger, maxChannel);
 scheduler.start();
 await deliveryService.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
+if (!maxChannel) logger.warn("MAX_BOT_TOKEN is empty; MAX delivery is disabled");
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");
 if (!satellite) logger.warn("Satellite image delivery is disabled");
 if (!detailedSatellite) logger.warn("Detailed satellite image delivery is disabled");

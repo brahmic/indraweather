@@ -21,6 +21,12 @@ export interface RunRecord {
   id: string;
 }
 
+export interface MaxWebhookRecord {
+  fingerprint: string;
+  payload: unknown;
+  attempts: number;
+}
+
 export class Database {
   private readonly pool: Pool;
 
@@ -333,6 +339,67 @@ export class Database {
       ORDER BY recipient_id
     `, [channel]);
     return result.rows.map((row) => row.recipient_id);
+  }
+
+  async enqueueMaxWebhook(fingerprint: string, payload: unknown): Promise<boolean> {
+    const result = await this.pool.query(`
+      INSERT INTO max_webhook_events (fingerprint, payload)
+      VALUES ($1, $2::jsonb)
+      ON CONFLICT (fingerprint) DO NOTHING
+      RETURNING 1
+    `, [fingerprint, JSON.stringify(payload)]);
+    return Boolean(result.rowCount);
+  }
+
+  async resetProcessingMaxWebhooks(): Promise<void> {
+    await this.pool.query(`
+      UPDATE max_webhook_events
+      SET status = 'pending', next_attempt_at = now(), updated_at = now()
+      WHERE status = 'processing'
+    `);
+  }
+
+  async claimMaxWebhook(): Promise<MaxWebhookRecord | null> {
+    const result = await this.pool.query<{
+      fingerprint: string;
+      payload: unknown;
+      attempts: number;
+    }>(`
+      WITH candidate AS (
+        SELECT fingerprint
+        FROM max_webhook_events
+        WHERE status IN ('pending', 'failed')
+          AND attempts < 5
+          AND next_attempt_at <= now()
+        ORDER BY received_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE max_webhook_events AS event
+      SET status = 'processing', attempts = attempts + 1, updated_at = now()
+      FROM candidate
+      WHERE event.fingerprint = candidate.fingerprint
+      RETURNING event.fingerprint, event.payload, event.attempts
+    `);
+    return result.rows[0] ?? null;
+  }
+
+  async completeMaxWebhook(fingerprint: string): Promise<void> {
+    await this.pool.query(`
+      UPDATE max_webhook_events
+      SET status = 'processed', processed_at = now(), last_error = NULL, updated_at = now()
+      WHERE fingerprint = $1
+    `, [fingerprint]);
+  }
+
+  async failMaxWebhook(fingerprint: string, error: string, attempts: number): Promise<void> {
+    const retrySeconds = Math.min(300, 5 * 2 ** Math.max(0, attempts - 1));
+    await this.pool.query(`
+      UPDATE max_webhook_events
+      SET status = 'failed', last_error = $2,
+          next_attempt_at = now() + ($3::integer * interval '1 second'), updated_at = now()
+      WHERE fingerprint = $1
+    `, [fingerprint, error.slice(0, 2000), retrySeconds]);
   }
 
   async markDelivery(

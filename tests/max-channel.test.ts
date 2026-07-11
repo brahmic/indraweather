@@ -1,0 +1,130 @@
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { MaxChannel } from "../src/delivery/max-channel.js";
+import type { Publication } from "../src/delivery/types.js";
+
+describe("MaxChannel", () => {
+  it("authenticates and enqueues webhook updates", async () => {
+    const database = databaseStub();
+    const api = apiStub();
+    const channel = createChannel(database, api);
+    await channel.start();
+    const body = JSON.stringify({
+      update_type: "bot_started",
+      timestamp: 1,
+      chat_id: 42,
+      user: { user_id: 42, is_bot: false },
+    });
+
+    expect(await channel.acceptWebhook("wrong", body)).toBe("unauthorized");
+    expect(await channel.acceptWebhook(webhookSecret("token"), body)).toBe("accepted");
+    expect(database.enqueueMaxWebhook).toHaveBeenCalledWith(
+      createHash("sha256").update(body).digest("hex"),
+      expect.objectContaining({ update_type: "bot_started" }),
+    );
+    await channel.stop();
+  });
+
+  it("processes /details from the durable queue", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-1",
+        attempts: 1,
+        payload: {
+          update_type: "message_created",
+          timestamp: 1,
+          message: {
+            sender: { user_id: 42, is_bot: false },
+            recipient: { chat_id: 42, chat_type: "dialog" },
+            body: { mid: "message-1", text: "/details" },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const channel = createChannel(database, api);
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-1"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining("<b>details</b>"),
+    );
+    await channel.stop();
+  });
+
+  it("uploads each image once for a multi-recipient broadcast", async () => {
+    const database = databaseStub();
+    database.getActiveRecipientIds.mockResolvedValue(["41", "42"]);
+    database.claimDelivery.mockResolvedValue(true);
+    const api = apiStub();
+    const channel = createChannel(database, api);
+    const publication: Publication = {
+      id: "bulletin-1",
+      text: "weather",
+      attachments: [{
+        kind: "image",
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "image/png",
+        filename: "satellite.png",
+        caption: "Satellite",
+        source: "EUMETSAT",
+        observedAt: new Date(),
+      }],
+    };
+
+    await channel.broadcast(publication);
+
+    expect(api.uploadImage).toHaveBeenCalledOnce();
+    expect(database.markDelivery).toHaveBeenCalledTimes(2);
+  });
+});
+
+function createChannel(database: ReturnType<typeof databaseStub>, api: ReturnType<typeof apiStub>) {
+  return new MaxChannel(
+    "token",
+    "https://weather.example.ru",
+    database as never,
+    {
+      getFreshDetails: vi.fn(async () => "details"),
+      getFreshOrRun: vi.fn(),
+    } as never,
+    [],
+    { timeZone: "Europe/Moscow" } as never,
+    api,
+    { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+  );
+}
+
+function databaseStub() {
+  return {
+    resetProcessingMaxWebhooks: vi.fn(async () => undefined),
+    enqueueMaxWebhook: vi.fn(async () => true),
+    claimMaxWebhook: vi.fn(async () => null),
+    completeMaxWebhook: vi.fn(async () => undefined),
+    failMaxWebhook: vi.fn(async () => undefined),
+    subscribe: vi.fn(async () => undefined),
+    unsubscribe: vi.fn(async () => undefined),
+    getActiveRecipientIds: vi.fn(async () => [] as string[]),
+    claimDelivery: vi.fn(async () => false),
+    markDelivery: vi.fn(async () => undefined),
+    getLastSuccessfulUpdate: vi.fn(async () => null),
+  };
+}
+
+function apiStub() {
+  let message = 0;
+  return {
+    initialize: vi.fn(async () => "weather_bot"),
+    uploadImage: vi.fn(async () => ({ type: "image" as const, payload: { token: "image" } })),
+    sendMessage: vi.fn(async () => `message-${message += 1}`),
+    editMessage: vi.fn(async () => undefined),
+    deleteMessage: vi.fn(async () => undefined),
+  };
+}
+
+function webhookSecret(token: string): string {
+  return createHash("sha256").update("indra:max-webhook:v1\0").update(token).digest("hex");
+}

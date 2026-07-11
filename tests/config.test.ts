@@ -48,4 +48,25 @@ describe("loadConfig", () => {
     expect(config.detailedSatellite.maxAgeHours).toBe(8);
     expect(config.detailedSatellite.minCoveragePercent).toBe(75);
   });
+
+  it("enables MAX only when token and HTTPS origin are both configured", () => {
+    const config = loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      MAX_BOT_TOKEN: "secret",
+      MAX_PUBLIC_BASE_URL: "https://weather.example.ru",
+    });
+    expect(config.max).toEqual({
+      token: "secret",
+      publicBaseUrl: "https://weather.example.ru",
+    });
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      MAX_BOT_TOKEN: "secret",
+    })).toThrow(/must be set together/u);
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      MAX_BOT_TOKEN: "secret",
+      MAX_PUBLIC_BASE_URL: "http://weather.example.ru/path",
+    })).toThrow(/HTTPS origin/u);
+  });
 });

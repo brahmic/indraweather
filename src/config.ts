@@ -14,6 +14,8 @@ const envSchema = z.object({
   DATABASE_USER: z.string().default("indra"),
   DATABASE_PASSWORD: z.string().optional().transform(emptyToUndefined),
   TELEGRAM_BOT_TOKEN: z.string().optional().transform(emptyToUndefined),
+  MAX_BOT_TOKEN: z.string().optional().transform(emptyToUndefined),
+  MAX_PUBLIC_BASE_URL: z.string().optional().transform(emptyToUndefined),
   STORMGLASS_API_KEY: z.string().optional().transform(emptyToUndefined),
   APP_TIMEZONE: z.string().default("Europe/Moscow"),
   SCHEDULE_TIMES: z.string().default("05:00,11:00,17:00,23:00"),
@@ -98,6 +100,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     logLevel: parsed.LOG_LEVEL,
     databaseUrl: resolveDatabaseUrl(parsed),
     telegramBotToken: parsed.TELEGRAM_BOT_TOKEN,
+    max: resolveMaxConfig(parsed.MAX_BOT_TOKEN, parsed.MAX_PUBLIC_BASE_URL),
     stormglassApiKey: parsed.STORMGLASS_API_KEY,
     timeZone: parsed.APP_TIMEZONE,
     scheduleTimes: parseSchedule(parsed.SCHEDULE_TIMES),
@@ -139,6 +142,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       eventTimeAgreementHours: parsed.EVENT_TIME_AGREEMENT_HOURS,
     },
   };
+}
+
+function resolveMaxConfig(token: string | undefined, publicBaseUrl: string | undefined) {
+  if (!token && !publicBaseUrl) return null;
+  if (!token || !publicBaseUrl) {
+    throw new Error("MAX_BOT_TOKEN and MAX_PUBLIC_BASE_URL must be set together");
+  }
+  const url = new URL(publicBaseUrl);
+  if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("MAX_PUBLIC_BASE_URL must be an HTTPS origin without a path");
+  }
+  return { token, publicBaseUrl: url.origin };
 }
 
 function parseBoundingBox(

@@ -1,8 +1,8 @@
 # Развёртывание на production
 
 Для MVP достаточно одного Linux-сервера с Docker Engine и Docker Compose.
-Telegram используется через long polling, поэтому домен, TLS-сертификат и
-открытые входящие HTTP-порты приложению не нужны.
+Telegram используется через long polling. MAX использует production webhook,
+поэтому для него необходимы домен, HTTPS и reverse proxy на порту 443.
 
 ## 1. Подготовка сервера
 
@@ -27,7 +27,20 @@ openssl rand -hex 32
 Записать его в `POSTGRES_PASSWORD` файла `.env`, затем заполнить:
 
 * `TELEGRAM_BOT_TOKEN`;
+* `MAX_BOT_TOKEN`;
+* `MAX_PUBLIC_BASE_URL`, например `https://weather.example.ru`;
 * `STORMGLASS_API_KEY`.
+
+`MAX_BOT_TOKEN` и `MAX_PUBLIC_BASE_URL` задаются только вместе. Секрет webhook
+стабильно вычисляется из токена и в `.env` не хранится. Адрес MAX API
+`https://platform-api2.max.ru` зафиксирован в коде.
+
+Для исходящих запросов к MAX Docker image устанавливает официальный
+`Russian Trusted Root CA` Минцифры из `certs/russian_trusted_root_ca.crt`.
+Это отдельная цепочка доверия MAX API: сертификат на вашем поддомене нужен для
+входящего webhook, но не заменяет корневой сертификат внутри контейнера.
+Источник сертификата: `https://www.gosuslugi.ru/crt`; SHA-256 fingerprint:
+`D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31`.
 
 Спутниковый источник EUMETSAT не требует ключа. Исходящее HTTPS-соединение с
 `view.eumetsat.int`, `api.eumetsat.int` и `service.eumetsat.int` должно быть
@@ -56,6 +69,38 @@ docker compose exec app wget -qO- http://127.0.0.1:3000/health/ready
 
 Ожидаемый ответ: `{"status":"ready"}`.
 
+### Reverse proxy для MAX
+
+Compose публикует HTTP приложения только на `127.0.0.1:3000`. Если этот порт
+занят, внешний порт можно изменить через `APP_HTTP_PORT`, не меняя внутренний
+порт контейнера.
+
+Пример location для Nginx:
+
+```nginx
+location = /webhooks/max {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 30s;
+}
+```
+
+После применения конфигурации Nginx запрос без секрета должен достигать
+приложения и получать `401`:
+
+```bash
+curl -i -X POST "${MAX_PUBLIC_BASE_URL}/webhooks/max" \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+При старте приложение проверяет токен MAX, публикует список команд и
+регистрирует webhook. Успешный запуск виден в логах как `MAX bot started`.
+Ошибка `unable to get local issuer certificate` означает, что запущен старый
+image: пересоберите его командой `docker compose up -d --build`.
+
 ## 4. Обновление
 
 ```bash
@@ -65,7 +110,7 @@ docker compose ps
 ```
 
 Миграции выполняются приложением автоматически до запуска планировщика и
-Telegram-бота.
+каналов доставки.
 
 ## 5. Расположение базы данных
 
@@ -104,5 +149,5 @@ docker compose logs --tail=200 postgres
 docker compose exec postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 ```
 
-После развёртывания пользователи должны отправить боту `/start`, поскольку новая
-production-база изначально не содержит подписчиков.
+После развёртывания пользователи должны отдельно запустить ботов в Telegram и
+MAX. Подписки хранятся независимо как `telegram / user_id` и `max / user_id`.

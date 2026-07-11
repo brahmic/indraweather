@@ -88,20 +88,25 @@ export class CopernicusRadarClient {
 
   private async getLatestObservation(token: string, now: Date): Promise<Date> {
     const from = new Date(now.getTime() - this.options.lookbackDays * 86_400_000);
-    const response = await fetch("https://sh.dataspace.copernicus.eu/api/v1/catalog/1.0.0/search", {
+    const response = await fetch("https://sh.dataspace.copernicus.eu/catalog/v1/search", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({
         collections: ["sentinel-1-grd"],
         bbox: this.options.bbox,
         datetime: `${from.toISOString()}/${now.toISOString()}`,
-        limit: 1,
-        sortby: [{ field: "datetime", direction: "desc" }],
+        limit: 100,
       }),
       signal: AbortSignal.timeout(this.options.timeoutMs),
     });
-    if (!response.ok) throw new Error(`Copernicus radar catalogue failed: HTTP ${response.status}`);
-    const feature = catalogSchema.parse(await response.json()).features[0];
+    if (!response.ok) {
+      throw new Error(`Copernicus radar catalogue failed: HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
+    }
+    const features = catalogSchema.parse(await response.json()).features;
+    const feature = features
+      .map((item) => ({ item, observedAt: new Date(item.properties.datetime) }))
+      .filter((item) => !Number.isNaN(item.observedAt.getTime()))
+      .sort((left, right) => right.observedAt.getTime() - left.observedAt.getTime())[0]?.item;
     if (!feature) throw new Error(`No Sentinel-1 radar scenes in the last ${this.options.lookbackDays} days`);
     const observedAt = new Date(feature.properties.datetime);
     if (Number.isNaN(observedAt.getTime())) throw new Error("Copernicus radar scene has invalid timestamp");

@@ -19,6 +19,7 @@ services:
     volumes:
       - satellite_animation:/var/lib/indra/satellite-animation
       - cloud_animation:/var/lib/indra/cloud-animation
+      - personal_animation:/var/lib/indra/personal-animation
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,3 +56,4 @@ volumes:
   postgres_data:
   satellite_animation:
   cloud_animation:
+  personal_animation:

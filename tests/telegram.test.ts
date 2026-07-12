@@ -209,6 +209,55 @@ describe("TelegramChannel /map", () => {
   });
 });
 
+describe("TelegramChannel personal animation", () => {
+  it("queues a custom animation after /weather without attaching the standard one", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getFreshOrRun: vi.fn(async () => ({ id: "bulletin-1", text: "Weather", attachments: [] })),
+    };
+    const personalAnimations = { request: vi.fn(async () => "queued") };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => [30.5, 64, 36.5, 68]) } as never,
+      publications as never,
+      [],
+      {
+        timeZone: "Europe/Moscow",
+        satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
+      } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+      personalAnimations as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: method === "deleteMessage" ? true : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/weather", 5));
+    await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledOnce());
+
+    expect(publications.getFreshOrRun).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30.5, 64, 36.5, 68],
+    }), false);
+    expect(personalAnimations.request).toHaveBeenCalledWith(
+      "telegram",
+      "123",
+      "satellite",
+      expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
+    );
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendMessage", "deleteMessage"]);
+  });
+});
+
 function commandUpdate(text: string, updateId: number) {
   return {
     update_id: updateId,

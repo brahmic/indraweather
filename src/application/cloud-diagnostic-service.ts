@@ -39,6 +39,44 @@ export class CloudDiagnosticService {
     };
   }
 
+  async getAnimationFrameAt(
+    observedAt: Date,
+    mode: CloudAnimationMode,
+    viewport: MapViewport,
+  ): Promise<ImageAttachment> {
+    const getFrame = await this.createAnimationFrameFetcher(viewport, mode);
+    return getFrame(observedAt);
+  }
+
+  async createAnimationFrameFetcher(
+    viewport: MapViewport,
+    mode: CloudAnimationMode,
+  ): Promise<(observedAt: Date) => Promise<ImageAttachment>> {
+    const layer = mode === "cloudtype" ? DAY_LAYER : NIGHT_LAYER;
+    const images = this.images.withViewport(viewport);
+    const coastline = this.coastline.withViewport(viewport);
+    const coastlinePaths = images.getCoastline();
+    return async (observedAt: Date): Promise<ImageAttachment> => {
+      const image = await images.getImage(layer, observedAt);
+      const data = await coastline.apply(
+        image.data,
+        await coastlinePaths,
+        { includeMapContext: false },
+      );
+      const isDay = layer.name === DAY_LAYER.name;
+      const label = isDay ? "типы облаков" : "туман и низкая облачность";
+      return {
+        kind: "image",
+        data,
+        contentType: "image/png",
+        filename: `clouds-${isDay ? "type" : "fog"}-${fileTime(observedAt)}.png`,
+        caption: `Кемь - Кандалакша · ${label} · ${formatTime(observedAt, this.options.timeZone)} МСК\nИсточник: EUMETSAT EUMETView`,
+        source: "EUMETSAT EUMETView",
+        observedAt,
+      };
+    };
+  }
+
   getAnimationMode(now = new Date()): CloudAnimationMode {
     return modeForLayer(this.selectLayer(now));
   }
@@ -47,19 +85,20 @@ export class CloudDiagnosticService {
     layer: SatelliteLayer,
     includeMapContext: boolean,
     viewport?: MapViewport,
+    observedAt?: Date,
   ): Promise<ImageAttachment> {
     const images = viewport ? this.images.withViewport(viewport) : this.images;
     const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
     const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
-    const metadata = await images.getLatestMetadata(layer);
-    const image = await images.getImage(layer, metadata.observedAt);
+    const timestamp = observedAt ?? (await images.getLatestMetadata(layer)).observedAt;
+    const image = await images.getImage(layer, timestamp);
     const coastlined = await coastline.apply(
       image.data,
       await images.getCoastline(),
       { includeMapContext },
     );
     const data = includeMapContext
-      ? await windOverlay.apply(coastlined, metadata.observedAt)
+      ? await windOverlay.apply(coastlined, timestamp)
       : coastlined;
     const isDay = layer.name === DAY_LAYER.name;
     const mode = isDay ? "типы облаков" : "туман и низкая облачность";
@@ -67,10 +106,10 @@ export class CloudDiagnosticService {
       kind: "image",
       data,
       contentType: "image/png",
-      filename: `clouds-${isDay ? "type" : "fog"}-${fileTime(metadata.observedAt)}.png`,
-      caption: `Кемь - Кандалакша · ${mode} · ${formatTime(metadata.observedAt, this.options.timeZone)} МСК\nИсточник: EUMETSAT EUMETView`,
+      filename: `clouds-${isDay ? "type" : "fog"}-${fileTime(timestamp)}.png`,
+      caption: `Кемь - Кандалакша · ${mode} · ${formatTime(timestamp, this.options.timeZone)} МСК\nИсточник: EUMETSAT EUMETView`,
       source: "EUMETSAT EUMETView",
-      observedAt: metadata.observedAt,
+      observedAt: timestamp,
     };
   }
 

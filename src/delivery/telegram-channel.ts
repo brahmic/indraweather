@@ -1,5 +1,6 @@
 import { Bot, GrammyError, HttpError, InlineKeyboard, InputFile, InputMediaBuilder } from "grammy";
 import type { PublicationService } from "../application/publication-service.js";
+import type { PersonalAnimationService } from "../application/personal-animation-service.js";
 import type { AppConfig } from "../config.js";
 import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.js";
 import { escapeHtml } from "../domain/bulletin.js";
@@ -26,6 +27,7 @@ export class TelegramChannel implements DeliveryChannel {
     private readonly points: ControlPoint[],
     private readonly config: AppConfig,
     private readonly logger: Logger,
+    private readonly personalAnimations: PersonalAnimationService | null = null,
   ) {
     this.bot = new Bot(token);
     this.registerHandlers();
@@ -79,13 +81,16 @@ export class TelegramChannel implements DeliveryChannel {
     this.bot.command("weather", async (ctx) => {
       const progress = await ctx.reply("⏳ Собираю прогноз и спутниковые снимки…");
       try {
+        const map = await this.getMapSelection(String(ctx.chat.id));
         const publication = await this.publications.getFreshOrRun(
-          await this.getMapViewport(String(ctx.chat.id)),
+          map.viewport,
+          !map.isCustom,
         );
         await this.sendPublication(String(ctx.chat.id), publication);
         await ctx.api.deleteMessage(ctx.chat.id, progress.message_id).catch((error: unknown) => {
           this.logger.debug({ error }, "Failed to remove weather progress message");
         });
+        if (map.isCustom) this.enqueuePersonalAnimation("satellite", String(ctx.chat.id), map.viewport);
       } catch (error) {
         this.logger.error({ error }, "Manual bulletin failed");
         const failure = "Не удалось сформировать бюллетень: погодные данные временно недоступны.";
@@ -123,11 +128,13 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("clouds", async (ctx) => {
-      await this.sendDiagnostic(
+      const map = await this.getMapSelection(String(ctx.chat.id));
+      const sent = await this.sendDiagnostic(
         ctx.chat.id,
-        async () => this.publications.getClouds(await this.getMapViewport(String(ctx.chat.id))),
+        async () => this.publications.getClouds(map.viewport, !map.isCustom),
         "Диагностический снимок облаков временно недоступен.",
       );
+      if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", String(ctx.chat.id), map.viewport);
     });
 
     this.bot.command("radar", async (ctx) => {
@@ -241,24 +248,43 @@ export class TelegramChannel implements DeliveryChannel {
     chatId: number,
     getAttachments: () => Promise<DeliveryAttachment[]>,
     failure: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       for (const attachment of await getAttachments()) {
         await this.sendAttachment(chatId, attachment);
       }
+      return true;
     } catch (error) {
       this.logger.warn({ err: error }, "Satellite diagnostic request failed");
       await this.bot.api.sendMessage(chatId, failure);
+      return false;
     }
   }
 
   private async getMapViewport(recipientId: string): Promise<MapViewport> {
+    return (await this.getMapSelection(recipientId)).viewport;
+  }
+
+  private async getMapSelection(recipientId: string): Promise<{ viewport: MapViewport; isCustom: boolean }> {
     const saved = await this.database.getMapViewport(this.id, recipientId);
-    return createMapViewport(
-      saved ?? this.config.satellite.bbox,
-      this.config.satellite.width,
-      this.config.satellite.height,
-    );
+    return {
+      viewport: createMapViewport(
+        saved ?? this.config.satellite.bbox,
+        this.config.satellite.width,
+        this.config.satellite.height,
+      ),
+      isCustom: saved !== null,
+    };
+  }
+
+  private enqueuePersonalAnimation(
+    kind: "satellite" | "clouds",
+    recipientId: string,
+    viewport: MapViewport,
+  ): void {
+    if (!this.personalAnimations) return;
+    void this.personalAnimations.request(this.id, recipientId, kind, viewport).catch((error: unknown) =>
+      this.logger.warn({ err: error, kind, recipientId }, "Personal animation request failed"));
   }
 
   private mapKeyboard(): InlineKeyboard {
@@ -292,6 +318,10 @@ export class TelegramChannel implements DeliveryChannel {
       new InputFile(attachment.data, attachment.filename),
       { caption: attachment.caption, supports_streaming: true },
     );
+  }
+
+  async sendPersonalAnimation(recipientId: string, attachment: DeliveryAttachment): Promise<void> {
+    await this.sendAttachment(recipientId, attachment);
   }
 
   private async sendContent(recipientId: string, content: string) {

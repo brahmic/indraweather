@@ -27,8 +27,8 @@ export class PublicationService {
     private readonly logger: Logger,
   ) {}
 
-  async getFreshOrRun(viewport?: MapViewport): Promise<Publication> {
-    return this.create(await this.bulletins.getFreshOrRun(), viewport);
+  async getFreshOrRun(viewport?: MapViewport, includeAnimations = true): Promise<Publication> {
+    return this.create(await this.bulletins.getFreshOrRun(), viewport, includeAnimations);
   }
 
   async run(options: RunBulletinOptions): Promise<Publication | null> {
@@ -41,10 +41,10 @@ export class PublicationService {
     return renderModelDetails(bulletin.summary, this.timeZone);
   }
 
-  async getClouds(viewport?: MapViewport): Promise<DeliveryAttachment[]> {
+  async getClouds(viewport?: MapViewport, includeAnimation = true): Promise<DeliveryAttachment[]> {
     if (!this.clouds) throw new Error("Cloud diagnostics are disabled");
     const attachments: DeliveryAttachment[] = [await this.clouds.getLatest(new Date(), viewport)];
-    if (this.cloudAnimation) {
+    if (includeAnimation && this.cloudAnimation) {
       try {
         const animation = await this.cloudAnimation.getLatest();
         if (animation) attachments.push(animation);
@@ -65,7 +65,11 @@ export class PublicationService {
     return this.satellite.getLatest(new Date(), viewport);
   }
 
-  private async create(bulletin: BulletinRecord, viewport?: MapViewport): Promise<Publication> {
+  private async create(
+    bulletin: BulletinRecord,
+    viewport?: MapViewport,
+    includeAnimations = true,
+  ): Promise<Publication> {
     const attachments: DeliveryAttachment[] = [];
     if (this.satellite) {
       try {
@@ -74,7 +78,7 @@ export class PublicationService {
         this.logger.warn({ error, bulletinId: bulletin.id }, "Satellite image is unavailable");
       }
     }
-    if (this.satelliteAnimation) {
+    if (includeAnimations && this.satelliteAnimation) {
       try {
         const animation = await this.satelliteAnimation.getLatest();
         if (animation) attachments.push(animation);

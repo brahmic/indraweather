@@ -7,11 +7,16 @@ import { RadarService } from "./application/radar-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { PublicationService } from "./application/publication-service.js";
+import {
+  PersonalAnimationService,
+  type PersonalAnimationSource,
+} from "./application/personal-animation-service.js";
 import { SatelliteImageService } from "./application/satellite-image-service.js";
 import { AnimationStore, SatelliteAnimationService } from "./application/satellite-animation-service.js";
 import { SentinelPassService } from "./application/sentinel-pass-service.js";
 import { WindOverlayService } from "./application/wind-overlay-service.js";
 import { loadConfig, loadControlPoints } from "./config.js";
+import type { MapViewport } from "./domain/map-viewport.js";
 import type { DeliveryChannel } from "./delivery/types.js";
 import { startHealthServer } from "./health.js";
 import { Database } from "./infrastructure/database.js";
@@ -198,6 +203,61 @@ const cloudAnimation = cloudDiagnostics && config.cloudAnimation.enabled
     logger,
   )
   : null;
+const personalAnimationSources: PersonalAnimationSource[] = [];
+if (satellite && satelliteAnimation) {
+  personalAnimationSources.push({
+    kind: "satellite" as const,
+    getContext: () => "infrared",
+    getFrames: async (since: Date) => (await database.getSatelliteAnimationFrames(since)).map((frame) => ({
+      observedAt: frame.observedAt,
+      source: frame.source,
+      label: "EUMETSAT ИК",
+    })),
+    createFrameFetcher: async (viewport: MapViewport) => {
+      const getFrame = await satellite.createInfraredFrameFetcher(viewport);
+      return (frame) => getFrame(frame.observedAt);
+    },
+  });
+}
+if (cloudDiagnostics && cloudAnimation) {
+  personalAnimationSources.push({
+    kind: "clouds" as const,
+    getContext: () => cloudDiagnostics.getAnimationMode(),
+    getFrames: async (since: Date, context: string) => {
+      const mode = context === "fog" ? "fog" : "cloudtype";
+      return (await database.getCloudAnimationFrames(since, mode)).map((frame) => ({
+        observedAt: frame.observedAt,
+        source: frame.source,
+        label: mode === "cloudtype" ? "EUMETSAT · типы облаков" : "EUMETSAT · туман и низкая облачность",
+      }));
+    },
+    createFrameFetcher: async (viewport: MapViewport, context: string) => {
+      const getFrame = await cloudDiagnostics.createAnimationFrameFetcher(
+        viewport,
+        context === "fog" ? "fog" : "cloudtype",
+      );
+      return (frame) => getFrame(frame.observedAt);
+    },
+  });
+}
+const personalAnimations = config.personalAnimation.enabled && personalAnimationSources.length > 0
+  ? new PersonalAnimationService(
+    database,
+    personalAnimationSources,
+    satelliteOverlay,
+    windOverlay,
+    new AnimationStore(config.personalAnimation.directory),
+    {
+      windowHours: config.satelliteAnimation.windowHours,
+      retentionHours: config.satelliteAnimation.retentionHours,
+      minFrames: config.satelliteAnimation.minFrames,
+      maxBytes: config.satelliteAnimation.maxBytes,
+      cacheMinutes: config.personalAnimation.cacheMinutes,
+      timeZone: config.timeZone,
+    },
+    logger,
+  )
+  : null;
 const radar = config.copernicus
   ? new RadarService(
     new CopernicusRadarClient({ ...config.copernicus, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, maxImageBytes: config.satellite.maxImageBytes }),
@@ -232,15 +292,26 @@ const publicationService = new PublicationService(
   logger,
 );
 const channels: DeliveryChannel[] = [];
+let telegramChannel: TelegramChannel | null = null;
 if (config.telegramBotToken) {
-  channels.push(new TelegramChannel(
+  telegramChannel = new TelegramChannel(
     config.telegramBotToken,
     database,
     publicationService,
     points,
     config,
     logger,
-  ));
+    personalAnimations,
+  );
+  channels.push(telegramChannel);
+}
+if (personalAnimations && telegramChannel) {
+  personalAnimations.setDelivery(async (job, attachment) => {
+    if (job.channel !== telegramChannel.id) {
+      throw new Error(`Unsupported personal animation channel: ${job.channel}`);
+    }
+    await telegramChannel.sendPersonalAnimation(job.recipientId, attachment);
+  });
 }
 const maxChannel = config.max
   ? new MaxChannel(
@@ -270,6 +341,7 @@ if (satelliteAnimation) await satelliteAnimation.start();
 if (cloudAnimation) await cloudAnimation.start();
 scheduler.start();
 await deliveryService.start();
+if (personalAnimations && telegramChannel) await personalAnimations.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
 if (!maxChannel) logger.warn("MAX_BOT_TOKEN is empty; MAX delivery is disabled");
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");
@@ -283,6 +355,7 @@ async function shutdown(signal: string): Promise<void> {
   scheduler.stop();
   await satelliteAnimation?.stop();
   await cloudAnimation?.stop();
+  await personalAnimations?.stop();
   await deliveryService.stop();
   await new Promise<void>((resolve) => healthServer.close(() => resolve()));
   await database.close();

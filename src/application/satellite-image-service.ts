@@ -31,6 +31,39 @@ export class SatelliteImageService {
     return this.getLatestForLayer(this.client.nightLayer, now, false);
   }
 
+  async getInfraredFrameAt(
+    observedAt: Date,
+    viewport: MapViewport,
+  ): Promise<ImageAttachment> {
+    const getFrame = await this.createInfraredFrameFetcher(viewport);
+    return getFrame(observedAt);
+  }
+
+  async createInfraredFrameFetcher(
+    viewport: MapViewport,
+  ): Promise<(observedAt: Date) => Promise<ImageAttachment>> {
+    const client = this.client.withViewport(viewport);
+    const coastlineOverlay = this.coastlineOverlay.withViewport(viewport);
+    const coastline = client.getCoastline();
+    return async (observedAt: Date): Promise<ImageAttachment> => {
+      const image = await client.getImage(client.nightLayer, observedAt);
+      const data = await coastlineOverlay.apply(
+        image.data,
+        await coastline,
+        { includeMapContext: false },
+      );
+      return {
+        kind: "image",
+        data,
+        contentType: image.contentType,
+        filename: `eumetsat-night-${filenameTime(observedAt)}.png`,
+        caption: this.caption(client.nightLayer, observedAt),
+        source: "EUMETSAT EUMETView",
+        observedAt,
+      };
+    };
+  }
+
   private async getLatestForLayer(
     layer: SatelliteLayer,
     now: Date,

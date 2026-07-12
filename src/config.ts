@@ -52,6 +52,10 @@ const envSchema = z.object({
   CLOUD_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   CLOUD_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/cloud-animation"),
+  PERSONAL_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
+    .transform((value) => value === "true"),
+  PERSONAL_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/personal-animation"),
+  PERSONAL_ANIMATION_CACHE_MINUTES: z.coerce.number().int().min(1).max(120).default(20),
   DETAILED_SATELLITE_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   DETAILED_SATELLITE_BBOX: z.string().default("31.4,65.6,35.8,67.4"),
@@ -151,6 +155,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     cloudAnimation: {
       enabled: parsed.SATELLITE_ENABLED && parsed.CLOUD_ANIMATION_ENABLED,
       directory: parsed.CLOUD_ANIMATION_DIRECTORY,
+    },
+    personalAnimation: {
+      enabled: parsed.SATELLITE_ENABLED
+        && parsed.SATELLITE_ANIMATION_ENABLED
+        && parsed.PERSONAL_ANIMATION_ENABLED,
+      directory: parsed.PERSONAL_ANIMATION_DIRECTORY,
+      cacheMinutes: parsed.PERSONAL_ANIMATION_CACHE_MINUTES,
     },
     detailedSatellite: {
       enabled: parsed.DETAILED_SATELLITE_ENABLED,

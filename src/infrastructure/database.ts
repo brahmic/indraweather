@@ -58,6 +58,47 @@ export interface WindOverlayForecast {
 
 export type StoredMapViewport = [west: number, south: number, east: number, north: number];
 
+export type PersonalAnimationKind = "satellite" | "clouds";
+
+export interface PersonalAnimationJobRecord {
+  id: number;
+  channel: string;
+  recipientId: string;
+  kind: PersonalAnimationKind;
+  viewportKey: string;
+  context: string;
+  bbox: StoredMapViewport;
+  width: number;
+  height: number;
+  attempts: number;
+  outputFilename: string | null;
+  source: string | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  frameCount: number | null;
+}
+
+interface PersonalAnimationJobRow {
+  id: number;
+  channel: string;
+  recipient_id: string;
+  kind: PersonalAnimationKind;
+  viewport_key: string;
+  animation_context: string;
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  width: number;
+  height: number;
+  attempts: number;
+  output_filename: string | null;
+  source: string | null;
+  started_at: Date | null;
+  ended_at: Date | null;
+  frame_count: number | null;
+}
+
 export class Database {
   private readonly pool: Pool;
 
@@ -402,6 +443,157 @@ export class Database {
         north = EXCLUDED.north,
         updated_at = now()
     `, [channel, recipientId, west, south, east, north]);
+  }
+
+  async getCachedPersonalAnimation(
+    channel: string,
+    recipientId: string,
+    kind: PersonalAnimationKind,
+    viewportKey: string,
+    context: string,
+    since: Date,
+  ): Promise<PersonalAnimationJobRecord | null> {
+    const result = await this.pool.query<PersonalAnimationJobRow>(`
+      SELECT id, channel, recipient_id, kind, viewport_key, animation_context, west, south, east, north,
+             width, height, attempts, output_filename, source, started_at, ended_at, frame_count
+      FROM personal_animation_jobs
+      WHERE channel = $1 AND recipient_id = $2 AND kind = $3 AND viewport_key = $4
+        AND animation_context = $5
+        AND status = 'completed' AND processed_at >= $6 AND output_filename IS NOT NULL
+      ORDER BY processed_at DESC
+      LIMIT 1
+    `, [channel, recipientId, kind, viewportKey, context, since]);
+    return personalAnimationJob(result.rows[0]);
+  }
+
+  async enqueuePersonalAnimation(
+    channel: string,
+    recipientId: string,
+    kind: PersonalAnimationKind,
+    viewportKey: string,
+    context: string,
+    bbox: StoredMapViewport,
+    width: number,
+    height: number,
+  ): Promise<PersonalAnimationJobRecord> {
+    await this.pool.query(`
+      UPDATE personal_animation_jobs
+      SET status = 'cancelled', updated_at = now()
+      WHERE channel = $1 AND recipient_id = $2 AND kind = $3
+        AND status = 'pending' AND (viewport_key <> $4 OR animation_context <> $5)
+    `, [channel, recipientId, kind, viewportKey, context]);
+    const [west, south, east, north] = bbox;
+    const inserted = await this.pool.query<PersonalAnimationJobRow>(`
+      INSERT INTO personal_animation_jobs
+        (channel, recipient_id, kind, viewport_key, animation_context, west, south, east, north, width, height)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT DO NOTHING
+      RETURNING id, channel, recipient_id, kind, viewport_key, animation_context, west, south, east, north,
+                width, height, attempts, output_filename, source, started_at, ended_at, frame_count
+    `, [channel, recipientId, kind, viewportKey, context, west, south, east, north, width, height]);
+    const row = inserted.rows[0] ?? (await this.pool.query<PersonalAnimationJobRow>(`
+      SELECT id, channel, recipient_id, kind, viewport_key, animation_context, west, south, east, north,
+             width, height, attempts, output_filename, source, started_at, ended_at, frame_count
+      FROM personal_animation_jobs
+      WHERE channel = $1 AND recipient_id = $2 AND kind = $3 AND viewport_key = $4
+        AND animation_context = $5
+        AND status IN ('pending', 'processing')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [channel, recipientId, kind, viewportKey, context])).rows[0];
+    const job = personalAnimationJob(row);
+    if (!job) throw new Error("Failed to enqueue personal animation");
+    return job;
+  }
+
+  async resetProcessingPersonalAnimations(): Promise<void> {
+    await this.pool.query(`
+      UPDATE personal_animation_jobs
+      SET status = 'pending', next_attempt_at = now(), updated_at = now()
+      WHERE status = 'processing'
+    `);
+  }
+
+  async claimPersonalAnimation(): Promise<PersonalAnimationJobRecord | null> {
+    const result = await this.pool.query<PersonalAnimationJobRow>(`
+      WITH candidate AS (
+        SELECT id
+        FROM personal_animation_jobs
+        WHERE status IN ('pending', 'failed')
+          AND attempts < 3
+          AND next_attempt_at <= now()
+        ORDER BY created_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE personal_animation_jobs AS job
+      SET status = 'processing', attempts = attempts + 1, updated_at = now()
+      FROM candidate
+      WHERE job.id = candidate.id
+      RETURNING job.id, job.channel, job.recipient_id, job.kind, job.viewport_key, job.animation_context,
+                job.west, job.south, job.east, job.north, job.width, job.height,
+                job.attempts, job.output_filename, job.source, job.started_at, job.ended_at,
+                job.frame_count
+    `);
+    return personalAnimationJob(result.rows[0]);
+  }
+
+  async completePersonalAnimation(
+    jobId: number,
+    outputFilename: string,
+    source: string,
+    startedAt: Date,
+    endedAt: Date,
+    frameCount: number,
+  ): Promise<void> {
+    await this.pool.query(`
+      UPDATE personal_animation_jobs
+      SET status = 'completed', output_filename = $2, source = $3,
+          started_at = $4, ended_at = $5, frame_count = $6,
+          processed_at = now(), last_error = NULL, updated_at = now()
+      WHERE id = $1
+    `, [jobId, outputFilename, source, startedAt, endedAt, frameCount]);
+  }
+
+  async failPersonalAnimation(jobId: number, error: string, attempts: number): Promise<void> {
+    const retrySeconds = Math.min(300, 15 * 2 ** Math.max(0, attempts - 1));
+    await this.pool.query(`
+      UPDATE personal_animation_jobs
+      SET status = 'failed', last_error = $2,
+          next_attempt_at = now() + ($3::integer * interval '1 second'), updated_at = now()
+      WHERE id = $1
+    `, [jobId, error.slice(0, 2000), retrySeconds]);
+  }
+
+  async cancelPersonalAnimation(jobId: number): Promise<void> {
+    await this.pool.query(`
+      UPDATE personal_animation_jobs
+      SET status = 'cancelled', updated_at = now()
+      WHERE id = $1 AND status IN ('pending', 'processing')
+    `, [jobId]);
+  }
+
+  async isMapViewportCurrent(
+    channel: string,
+    recipientId: string,
+    [west, south, east, north]: StoredMapViewport,
+  ): Promise<boolean> {
+    const result = await this.pool.query(`
+      SELECT 1
+      FROM map_viewports
+      WHERE channel = $1 AND recipient_id = $2
+        AND west = $3 AND south = $4 AND east = $5 AND north = $6
+    `, [channel, recipientId, west, south, east, north]);
+    return Boolean(result.rowCount);
+  }
+
+  async removeExpiredPersonalAnimations(before: Date): Promise<string[]> {
+    const result = await this.pool.query<{ output_filename: string | null }>(`
+      DELETE FROM personal_animation_jobs
+      WHERE created_at < $1 AND status IN ('completed', 'failed', 'cancelled')
+      RETURNING output_filename
+    `, [before]);
+    return result.rows.flatMap((row) => row.output_filename ? [row.output_filename] : []);
   }
 
   async enqueueMaxWebhook(fingerprint: string, payload: unknown): Promise<boolean> {
@@ -813,4 +1005,25 @@ function reviveSummary(raw: unknown): BulletinSummary {
     }
   }
   return summary;
+}
+
+function personalAnimationJob(row: PersonalAnimationJobRow | undefined): PersonalAnimationJobRecord | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    channel: row.channel,
+    recipientId: row.recipient_id,
+    kind: row.kind,
+    viewportKey: row.viewport_key,
+    context: row.animation_context,
+    bbox: [row.west, row.south, row.east, row.north],
+    width: row.width,
+    height: row.height,
+    attempts: row.attempts,
+    outputFilename: row.output_filename,
+    source: row.source,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    frameCount: row.frame_count,
+  };
 }

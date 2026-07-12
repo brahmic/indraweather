@@ -38,5 +38,13 @@
     "longitude": 32.425,
     "order": 50,
     "active": true
+  },
+  {
+    "id": "umba",
+    "name": "Умба",
+    "latitude": 66.679,
+    "longitude": 34.31,
+    "order": 60,
+    "active": true
   }
 ]

@@ -54,6 +54,7 @@ export class MaxApiClient {
     commandsSchema.parse(await this.request("PATCH", "/me/commands", {
       commands: [
         { name: "start", description: "Подписаться на бюллетени" },
+        { name: "help", description: "Справка по командам" },
         { name: "stop", description: "Отключить уведомления" },
         { name: "weather", description: "Актуальный бюллетень" },
         { name: "details", description: "ECMWF и GFS отдельно" },

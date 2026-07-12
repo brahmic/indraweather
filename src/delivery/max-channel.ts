@@ -16,6 +16,7 @@ import type { Database, MaxWebhookRecord } from "../infrastructure/database.js";
 import type { MaxApiClient, MaxMessageAttachment } from "../infrastructure/max-api.js";
 import type { Logger } from "../logger.js";
 import { formatPostHtml, splitText } from "./post-format.js";
+import { formatHelpHtml } from "./help-text.js";
 import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.js";
 
 const userSchema = z.object({
@@ -221,6 +222,9 @@ export class MaxChannel implements DeliveryChannel {
         await this.database.unsubscribe(this.id, String(sender.user_id));
         await this.api.sendMessage(sender.user_id, "Автоматические уведомления отключены. Возобновить: /start");
         break;
+      case "help":
+        await this.api.sendMessage(sender.user_id, formatHelpHtml(this.config.scheduleTimes));
+        break;
       case "weather":
         await this.sendWeather(sender.user_id);
         break;
@@ -251,10 +255,7 @@ export class MaxChannel implements DeliveryChannel {
 
   private async subscribeAndWelcome(userId: number): Promise<void> {
     await this.database.subscribe(this.id, String(userId));
-    await this.api.sendMessage(
-      userId,
-      "Подписка включена. Бюллетени приходят ежедневно в 05:00, 11:00, 17:00 и 23:00 МСК. Отключить: /stop",
-    );
+    await this.api.sendMessage(userId, formatHelpHtml(this.config.scheduleTimes, true));
   }
 
   private async sendWeather(userId: number): Promise<void> {

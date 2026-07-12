@@ -15,6 +15,7 @@ import type { ControlPoint } from "../domain/types.js";
 import type { Database } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
 import { formatPostHtml, splitText } from "./post-format.js";
+import { formatHelpHtml } from "./help-text.js";
 
 export class TelegramChannel implements DeliveryChannel {
   readonly id = "telegram";
@@ -36,6 +37,7 @@ export class TelegramChannel implements DeliveryChannel {
   async start(): Promise<void> {
     await this.bot.api.setMyCommands([
       { command: "start", description: "Подписаться на бюллетени" },
+      { command: "help", description: "Справка по командам" },
       { command: "stop", description: "Отключить уведомления" },
       { command: "weather", description: "Актуальный бюллетень" },
       { command: "details", description: "ECMWF и GFS отдельно" },
@@ -68,9 +70,11 @@ export class TelegramChannel implements DeliveryChannel {
         return;
       }
       await this.database.subscribe(this.id, String(ctx.chat.id));
-      await ctx.reply(
-        "Подписка включена. Бюллетени приходят ежедневно в 05:00, 11:00, 17:00 и 23:00 МСК. Отключить: /stop",
-      );
+      await ctx.reply(formatHelpHtml(this.config.scheduleTimes, true), { parse_mode: "HTML" });
+    });
+
+    this.bot.command("help", async (ctx) => {
+      await ctx.reply(formatHelpHtml(this.config.scheduleTimes), { parse_mode: "HTML" });
     });
 
     this.bot.command("stop", async (ctx) => {

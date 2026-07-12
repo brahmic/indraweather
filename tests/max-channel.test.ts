@@ -333,6 +333,7 @@ function apiStub() {
 function appConfig() {
   return {
     timeZone: "Europe/Moscow",
+    scheduleTimes: ["05:00", "11:00", "17:00", "23:00"],
     satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
   };
 }

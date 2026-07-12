@@ -2,6 +2,7 @@ import type { BulletinService, RunBulletinOptions } from "./bulletin-service.js"
 import type { DeliveryAttachment, Publication } from "../delivery/types.js";
 import type { SatelliteAnimationService } from "./satellite-animation-service.js";
 import type { CloudDiagnosticService } from "./cloud-diagnostic-service.js";
+import type { CloudAnimationService } from "./cloud-animation-service.js";
 import type { RadarService } from "./radar-service.js";
 import type { SatelliteImageService } from "./satellite-image-service.js";
 import type {
@@ -19,6 +20,7 @@ export class PublicationService {
     private readonly satelliteAnimation: SatelliteAnimationService | null,
     private readonly detailedSatellite: DetailedSatelliteService | null,
     private readonly clouds: CloudDiagnosticService | null,
+    private readonly cloudAnimation: CloudAnimationService | null,
     private readonly radar: RadarService | null,
     private readonly timeZone: string,
     private readonly logger: Logger,
@@ -38,9 +40,18 @@ export class PublicationService {
     return renderModelDetails(bulletin.summary, this.timeZone);
   }
 
-  async getClouds() {
+  async getClouds(): Promise<DeliveryAttachment[]> {
     if (!this.clouds) throw new Error("Cloud diagnostics are disabled");
-    return this.clouds.getLatest();
+    const attachments: DeliveryAttachment[] = [await this.clouds.getLatest()];
+    if (this.cloudAnimation) {
+      try {
+        const animation = await this.cloudAnimation.getLatest();
+        if (animation) attachments.push(animation);
+      } catch (error) {
+        this.logger.warn({ error }, "Cloud diagnostic animation is unavailable");
+      }
+    }
+    return attachments;
   }
 
   async getRadar() {

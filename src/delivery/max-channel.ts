@@ -8,7 +8,7 @@ import type { Database, MaxWebhookRecord } from "../infrastructure/database.js";
 import type { MaxApiClient, MaxMessageAttachment } from "../infrastructure/max-api.js";
 import type { Logger } from "../logger.js";
 import { formatPostHtml, splitText } from "./post-format.js";
-import type { DeliveryChannel, Publication } from "./types.js";
+import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.js";
 
 const userSchema = z.object({
   user_id: z.number(),
@@ -206,7 +206,11 @@ export class MaxChannel implements DeliveryChannel {
         await this.sendDiagnostic(sender.user_id, () => this.publications.getClouds(), "Диагностический снимок облаков временно недоступен.");
         break;
       case "radar":
-        await this.sendDiagnostic(sender.user_id, () => this.publications.getRadar(), "Радар Sentinel-1 временно недоступен или ещё не настроен.");
+        await this.sendDiagnostic(
+          sender.user_id,
+          async () => [await this.publications.getRadar()],
+          "Радар Sentinel-1 временно недоступен или ещё не настроен.",
+        );
         break;
     }
   }
@@ -254,20 +258,32 @@ export class MaxChannel implements DeliveryChannel {
     await this.api.sendMessage(userId, `Последнее успешное обновление: ${text}.`);
   }
 
-  private async sendDiagnostic(userId: number, getAttachment: () => Promise<import("./types.js").ImageAttachment>, failure: string): Promise<void> {
-    let attachment: import("./types.js").ImageAttachment;
+  private async sendDiagnostic(
+    userId: number,
+    getAttachments: () => Promise<DeliveryAttachment[]>,
+    failure: string,
+  ): Promise<void> {
+    let attachments: DeliveryAttachment[];
     try {
-      attachment = await getAttachment();
+      attachments = await getAttachments();
     } catch (error) {
       this.logger.warn({ err: error }, "MAX satellite diagnostic request failed");
       await this.api.sendMessage(userId, failure);
       return;
     }
-    try {
-      const uploaded = await this.api.uploadImage(attachment.data, attachment.filename);
-      await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
-    } catch (error) {
-      this.logger.warn({ err: error, filename: attachment.filename }, "MAX diagnostic delivery failed");
+    let sent = false;
+    for (const attachment of attachments) {
+      try {
+        const uploaded = attachment.kind === "image"
+          ? await this.api.uploadImage(attachment.data, attachment.filename)
+          : await this.api.uploadVideo(attachment.data, attachment.filename);
+        await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
+        sent = true;
+      } catch (error) {
+        this.logger.warn({ err: error, filename: attachment.filename }, "MAX diagnostic delivery failed");
+      }
+    }
+    if (!sent) {
       await this.api.sendMessage(userId, "Снимок собран, но MAX временно не принял файл. Повторите запрос позже.");
     }
   }

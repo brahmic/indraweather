@@ -49,6 +49,9 @@ const envSchema = z.object({
   SATELLITE_ANIMATION_MIN_FRAMES: z.coerce.number().int().min(3).max(72).default(3),
   SATELLITE_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/satellite-animation"),
   SATELLITE_ANIMATION_MAX_BYTES: z.coerce.number().int().positive().default(15_000_000),
+  CLOUD_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
+    .transform((value) => value === "true"),
+  CLOUD_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/cloud-animation"),
   DETAILED_SATELLITE_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   DETAILED_SATELLITE_BBOX: z.string().default("31.4,65.6,35.8,67.4"),
@@ -144,6 +147,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       minFrames: parsed.SATELLITE_ANIMATION_MIN_FRAMES,
       directory: parsed.SATELLITE_ANIMATION_DIRECTORY,
       maxBytes: parsed.SATELLITE_ANIMATION_MAX_BYTES,
+    },
+    cloudAnimation: {
+      enabled: parsed.SATELLITE_ENABLED && parsed.CLOUD_ANIMATION_ENABLED,
+      directory: parsed.CLOUD_ANIMATION_DIRECTORY,
     },
     detailedSatellite: {
       enabled: parsed.DETAILED_SATELLITE_ENABLED,

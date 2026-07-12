@@ -47,7 +47,7 @@ export class SatelliteAnimationService {
     private readonly database: Database,
     private readonly satellite: InfraredImageSource,
     private readonly mapContext: MapContextOverlay,
-    private readonly store: SatelliteAnimationStore,
+    private readonly store: AnimationStore,
     private readonly options: SatelliteAnimationOptions,
     private readonly logger: Logger,
     private readonly encoder: AnimationEncoder = new FfmpegAnimationEncoder(),
@@ -192,10 +192,11 @@ export class SatelliteAnimationService {
       const filename = filenames[index];
       if (!filename) throw new Error("Satellite animation frame filename is missing");
       const source = await readFile(this.store.path(frame.filename));
-      const stamped = await stampFrame(
+      const stamped = await stampAnimationFrame(
         source,
         frame.observedAt,
         this.options.timeZone,
+        "EUMETSAT IR",
         index === frames.length - 1,
       );
       await this.store.write(filename, await this.mapContext.applyContext(stamped));
@@ -204,10 +205,11 @@ export class SatelliteAnimationService {
   }
 }
 
-async function stampFrame(
+export async function stampAnimationFrame(
   data: Uint8Array,
   observedAt: Date,
   timeZone: string,
+  sourceLabel: string,
   isLatest: boolean,
 ): Promise<Uint8Array> {
   const image = sharp(data);
@@ -221,7 +223,7 @@ async function stampFrame(
     hour: "2-digit",
     minute: "2-digit",
   }).format(observedAt);
-  const label = `EUMETSAT IR · ${time} МСК`;
+  const label = `${sourceLabel} · ${time} МСК`;
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="12" y="${height - 48}" width="300" height="34" rx="3" fill="#101820" fill-opacity="0.78"/>
     <text x="24" y="${height - 25}" fill="white" font-family="Noto Sans, sans-serif" font-size="18">${label}</text>
@@ -233,7 +235,7 @@ async function stampFrame(
   return new Uint8Array(await image.composite([{ input: Buffer.from(svg) }]).png().toBuffer());
 }
 
-export class SatelliteAnimationStore {
+export class AnimationStore {
   constructor(private readonly directory: string) {}
 
   async initialize(): Promise<void> {
@@ -252,8 +254,8 @@ export class SatelliteAnimationStore {
     await rename(temporary, target);
   }
 
-  async existing(frames: SatelliteAnimationFrameRecord[]): Promise<SatelliteAnimationFrameRecord[]> {
-    const result: SatelliteAnimationFrameRecord[] = [];
+  async existing<T extends { filename: string }>(frames: T[]): Promise<T[]> {
+    const result: T[] = [];
     for (const frame of frames) {
       if (await fileExists(this.path(frame.filename))) result.push(frame);
     }
@@ -267,13 +269,15 @@ export class SatelliteAnimationStore {
   async removeOldAnimations(before: Date): Promise<void> {
     const files = await readdir(this.directory, { withFileTypes: true });
     await Promise.all(files
-      .filter((entry) => entry.isFile() && entry.name.startsWith("animation-") && entry.name.endsWith(".mp4"))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".mp4"))
       .map(async (entry) => {
         const path = this.path(entry.name);
         if ((await stat(path)).mtime < before) await rm(path, { force: true });
       }));
   }
 }
+
+export { AnimationStore as SatelliteAnimationStore };
 
 export class FfmpegAnimationEncoder implements AnimationEncoder {
   async encode(framePaths: string[], outputPath: string): Promise<void> {

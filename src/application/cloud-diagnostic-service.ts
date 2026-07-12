@@ -9,6 +9,13 @@ export interface CloudDiagnosticOptions {
   timeZone: string;
 }
 
+export type CloudAnimationMode = "cloudtype" | "fog";
+
+export interface CloudAnimationFrame {
+  attachment: ImageAttachment;
+  mode: CloudAnimationMode;
+}
+
 export class CloudDiagnosticService {
   constructor(
     private readonly images: EumetviewClient,
@@ -18,9 +25,32 @@ export class CloudDiagnosticService {
 
   async getLatest(now = new Date()): Promise<ImageAttachment> {
     const layer = this.selectLayer(now);
+    return this.getLatestForLayer(layer, true);
+  }
+
+  async getLatestForAnimation(now = new Date()): Promise<CloudAnimationFrame> {
+    const layer = this.selectLayer(now);
+    return {
+      attachment: await this.getLatestForLayer(layer, false),
+      mode: modeForLayer(layer),
+    };
+  }
+
+  getAnimationMode(now = new Date()): CloudAnimationMode {
+    return modeForLayer(this.selectLayer(now));
+  }
+
+  private async getLatestForLayer(
+    layer: SatelliteLayer,
+    includeMapContext: boolean,
+  ): Promise<ImageAttachment> {
     const metadata = await this.images.getLatestMetadata(layer);
     const image = await this.images.getImage(layer, metadata.observedAt);
-    const data = await this.coastline.apply(image.data, await this.images.getCoastline());
+    const data = await this.coastline.apply(
+      image.data,
+      await this.images.getCoastline(),
+      { includeMapContext },
+    );
     const isDay = layer.name === DAY_LAYER.name;
     const mode = isDay ? "типы облаков" : "туман и низкая облачность";
     return {
@@ -42,6 +72,10 @@ export class CloudDiagnosticService {
 
 const DAY_LAYER: SatelliteLayer = { name: "mtg_fd:rgb_cloudtype", mode: "day" };
 const NIGHT_LAYER: SatelliteLayer = { name: "mtg_fd:rgb_fog", mode: "night" };
+
+function modeForLayer(layer: SatelliteLayer): CloudAnimationMode {
+  return layer.name === DAY_LAYER.name ? "cloudtype" : "fog";
+}
 
 function fileTime(date: Date): string {
   return date.toISOString().replaceAll(":", "-").replace(".000Z", "Z");

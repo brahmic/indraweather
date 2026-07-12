@@ -70,6 +70,7 @@ describe("PublicationService", () => {
       null,
       null,
       null,
+      null,
       "Europe/Moscow",
       { warn: () => undefined } as never,
     );
@@ -77,5 +78,23 @@ describe("PublicationService", () => {
     const publication = await service.getFreshOrRun();
 
     expect(publication.text).toBe("weather\n\nПодробности по моделям:\n/details");
+  });
+
+  it("returns the current cloud diagnostic together with its separate animation", async () => {
+    const image = { kind: "image", filename: "clouds.png" } as never;
+    const animation = { kind: "animation", filename: "clouds.mp4" } as never;
+    const service = new PublicationService(
+      {} as never,
+      null,
+      null,
+      null,
+      { getLatest: async () => image } as never,
+      { getLatest: async () => animation } as never,
+      null,
+      "Europe/Moscow",
+      { warn: () => undefined } as never,
+    );
+
+    await expect(service.getClouds()).resolves.toEqual([image, animation]);
   });
 });

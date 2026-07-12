@@ -39,6 +39,10 @@ export interface SatelliteAnimationFrameRecord {
   source: string;
 }
 
+export interface CloudAnimationFrameRecord extends SatelliteAnimationFrameRecord {
+  mode: "cloudtype" | "fog";
+}
+
 export class Database {
   private readonly pool: Pool;
 
@@ -522,6 +526,124 @@ export class Database {
   async removeExpiredSatelliteCaptureJobs(before: Date): Promise<void> {
     await this.pool.query(`
       DELETE FROM satellite_capture_jobs
+      WHERE scheduled_for < $1 AND status IN ('processed', 'failed')
+    `, [before]);
+  }
+
+  async enqueueCloudAnimationCaptureJob(scheduledFor: Date): Promise<boolean> {
+    const result = await this.pool.query(`
+      INSERT INTO cloud_animation_capture_jobs (scheduled_for)
+      VALUES ($1)
+      ON CONFLICT (scheduled_for) DO NOTHING
+      RETURNING 1
+    `, [scheduledFor]);
+    return Boolean(result.rowCount);
+  }
+
+  async resetProcessingCloudAnimationCaptureJobs(): Promise<void> {
+    await this.pool.query(`
+      UPDATE cloud_animation_capture_jobs
+      SET status = 'pending', next_attempt_at = now(), updated_at = now()
+      WHERE status = 'processing'
+    `);
+  }
+
+  async claimCloudAnimationCaptureJob(): Promise<SatelliteCaptureJobRecord | null> {
+    const result = await this.pool.query<{
+      scheduled_for: Date;
+      attempts: number;
+    }>(`
+      WITH candidate AS (
+        SELECT scheduled_for
+        FROM cloud_animation_capture_jobs
+        WHERE status IN ('pending', 'failed')
+          AND attempts < 5
+          AND next_attempt_at <= now()
+        ORDER BY scheduled_for
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE cloud_animation_capture_jobs AS job
+      SET status = 'processing', attempts = attempts + 1, updated_at = now()
+      FROM candidate
+      WHERE job.scheduled_for = candidate.scheduled_for
+      RETURNING job.scheduled_for, job.attempts
+    `);
+    const row = result.rows[0];
+    return row ? { scheduledFor: row.scheduled_for, attempts: row.attempts } : null;
+  }
+
+  async completeCloudAnimationCaptureJob(scheduledFor: Date): Promise<void> {
+    await this.pool.query(`
+      UPDATE cloud_animation_capture_jobs
+      SET status = 'processed', processed_at = now(), last_error = NULL, updated_at = now()
+      WHERE scheduled_for = $1
+    `, [scheduledFor]);
+  }
+
+  async failCloudAnimationCaptureJob(scheduledFor: Date, error: string, attempts: number): Promise<void> {
+    const retrySeconds = Math.min(300, 15 * 2 ** Math.max(0, attempts - 1));
+    await this.pool.query(`
+      UPDATE cloud_animation_capture_jobs
+      SET status = 'failed', last_error = $2,
+          next_attempt_at = now() + ($3::integer * interval '1 second'), updated_at = now()
+      WHERE scheduled_for = $1
+    `, [scheduledFor, error.slice(0, 2000), retrySeconds]);
+  }
+
+  async saveCloudAnimationFrame(
+    observedAt: Date,
+    mode: "cloudtype" | "fog",
+    filename: string,
+    byteSize: number,
+    source: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(`
+      INSERT INTO cloud_animation_frames (mode, observed_at, filename, byte_size, source)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (mode, observed_at) DO NOTHING
+      RETURNING 1
+    `, [mode, observedAt, filename, byteSize, source]);
+    return Boolean(result.rowCount);
+  }
+
+  async getCloudAnimationFrames(
+    since: Date,
+    mode: "cloudtype" | "fog",
+  ): Promise<CloudAnimationFrameRecord[]> {
+    const result = await this.pool.query<{
+      mode: "cloudtype" | "fog";
+      observed_at: Date;
+      filename: string;
+      byte_size: number;
+      source: string;
+    }>(`
+      SELECT mode, observed_at, filename, byte_size, source
+      FROM cloud_animation_frames
+      WHERE observed_at >= $1 AND mode = $2
+      ORDER BY observed_at
+    `, [since, mode]);
+    return result.rows.map((row) => ({
+      mode: row.mode,
+      observedAt: row.observed_at,
+      filename: row.filename,
+      byteSize: row.byte_size,
+      source: row.source,
+    }));
+  }
+
+  async removeExpiredCloudAnimationFrames(before: Date): Promise<string[]> {
+    const result = await this.pool.query<{ filename: string }>(`
+      DELETE FROM cloud_animation_frames
+      WHERE observed_at < $1
+      RETURNING filename
+    `, [before]);
+    return result.rows.map((row) => row.filename);
+  }
+
+  async removeExpiredCloudAnimationCaptureJobs(before: Date): Promise<void> {
+    await this.pool.query(`
+      DELETE FROM cloud_animation_capture_jobs
       WHERE scheduled_for < $1 AND status IN ('processed', 'failed')
     `, [before]);
   }

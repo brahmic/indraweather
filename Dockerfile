@@ -17,6 +17,6 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY config ./config
 COPY migrations ./migrations
-RUN mkdir -p /var/lib/indra/satellite-animation && chown -R node:node /var/lib/indra
+RUN mkdir -p /var/lib/indra/satellite-animation /var/lib/indra/cloud-animation && chown -R node:node /var/lib/indra
 USER node
 CMD ["node", "dist/src/index.js"]

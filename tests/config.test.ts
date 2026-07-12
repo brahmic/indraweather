@@ -37,7 +37,7 @@ describe("loadConfig", () => {
     })).toThrow(/SATELLITE_BBOX/u);
   });
 
-  it("enables a bounded 24-hour satellite animation by default", () => {
+  it("enables a bounded 12-hour satellite animation by default", () => {
     const config = loadConfig({ DATABASE_URL: "postgres://localhost/test" });
     expect(config.satelliteAnimation).toMatchObject({
       enabled: true,
@@ -45,6 +45,10 @@ describe("loadConfig", () => {
       windowHours: 12,
       retentionHours: 26,
       minFrames: 3,
+    });
+    expect(config.cloudAnimation).toEqual({
+      enabled: true,
+      directory: "/var/lib/indra/cloud-animation",
     });
     expect(() => loadConfig({
       DATABASE_URL: "postgres://localhost/test",

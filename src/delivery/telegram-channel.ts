@@ -1,7 +1,7 @@
 import { Bot, GrammyError, HttpError, InputFile } from "grammy";
 import type { PublicationService } from "../application/publication-service.js";
 import type { AppConfig } from "../config.js";
-import type { DeliveryChannel, Publication } from "./types.js";
+import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.js";
 import { escapeHtml } from "../domain/bulletin.js";
 import type { ControlPoint } from "../domain/types.js";
 import type { Database } from "../infrastructure/database.js";
@@ -117,7 +117,11 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("radar", async (ctx) => {
-      await this.sendDiagnostic(ctx.chat.id, () => this.publications.getRadar(), "Радар Sentinel-1 временно недоступен или ещё не настроен.");
+      await this.sendDiagnostic(
+        ctx.chat.id,
+        async () => [await this.publications.getRadar()],
+        "Радар Sentinel-1 временно недоступен или ещё не настроен.",
+      );
     });
 
     this.bot.catch((error) => {
@@ -165,32 +169,40 @@ export class TelegramChannel implements DeliveryChannel {
   private async sendPublication(recipientId: string, publication: Publication) {
     const messages = [];
     for (const attachment of publication.attachments) {
-      if (attachment.kind === "image") {
-        messages.push(await this.bot.api.sendPhoto(
-          recipientId,
-          new InputFile(attachment.data, attachment.filename),
-          { caption: attachment.caption },
-        ));
-      } else if (attachment.kind === "animation") {
-        messages.push(await this.bot.api.sendVideo(
-          recipientId,
-          new InputFile(attachment.data, attachment.filename),
-          { caption: attachment.caption, supports_streaming: true },
-        ));
-      }
+      messages.push(await this.sendAttachment(recipientId, attachment));
     }
     messages.push(...await this.sendContent(recipientId, publication.text));
     return messages;
   }
 
-  private async sendDiagnostic(chatId: number, getAttachment: () => Promise<import("./types.js").ImageAttachment>, failure: string): Promise<void> {
+  private async sendDiagnostic(
+    chatId: number,
+    getAttachments: () => Promise<DeliveryAttachment[]>,
+    failure: string,
+  ): Promise<void> {
     try {
-      const attachment = await getAttachment();
-      await this.bot.api.sendPhoto(chatId, new InputFile(attachment.data, attachment.filename), { caption: attachment.caption });
+      for (const attachment of await getAttachments()) {
+        await this.sendAttachment(chatId, attachment);
+      }
     } catch (error) {
       this.logger.warn({ err: error }, "Satellite diagnostic request failed");
       await this.bot.api.sendMessage(chatId, failure);
     }
+  }
+
+  private async sendAttachment(chatId: string | number, attachment: DeliveryAttachment) {
+    if (attachment.kind === "image") {
+      return this.bot.api.sendPhoto(
+        chatId,
+        new InputFile(attachment.data, attachment.filename),
+        { caption: attachment.caption },
+      );
+    }
+    return this.bot.api.sendVideo(
+      chatId,
+      new InputFile(attachment.data, attachment.filename),
+      { caption: attachment.caption, supports_streaming: true },
+    );
   }
 
   private async sendContent(recipientId: string, content: string) {

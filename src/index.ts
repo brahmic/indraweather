@@ -1,13 +1,14 @@
 import "dotenv/config";
 import { BulletinService } from "./application/bulletin-service.js";
 import { CoastlineOverlayService } from "./application/coastline-overlay-service.js";
+import { CloudAnimationService } from "./application/cloud-animation-service.js";
 import { CloudDiagnosticService } from "./application/cloud-diagnostic-service.js";
 import { RadarService } from "./application/radar-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { PublicationService } from "./application/publication-service.js";
 import { SatelliteImageService } from "./application/satellite-image-service.js";
-import { SatelliteAnimationService, SatelliteAnimationStore } from "./application/satellite-animation-service.js";
+import { AnimationStore, SatelliteAnimationService } from "./application/satellite-animation-service.js";
 import { SentinelPassService } from "./application/sentinel-pass-service.js";
 import { loadConfig, loadControlPoints } from "./config.js";
 import type { DeliveryChannel } from "./delivery/types.js";
@@ -81,7 +82,7 @@ const satelliteAnimation = satellite && config.satelliteAnimation.enabled
     database,
     satellite,
     satelliteOverlay,
-    new SatelliteAnimationStore(config.satelliteAnimation.directory),
+    new AnimationStore(config.satelliteAnimation.directory),
     {
       intervalMinutes: config.satelliteAnimation.intervalMinutes,
       windowHours: config.satelliteAnimation.windowHours,
@@ -145,8 +146,26 @@ const detailedSatellite = config.detailedSatellite.enabled
 const cloudDiagnostics = satellite
   ? new CloudDiagnosticService(
     new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.satellite.bbox, width: config.satellite.width, height: config.satellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
-    new CoastlineOverlayService({ bbox: config.satellite.bbox, width: config.satellite.width, height: config.satellite.height, maxImageBytes: config.satellite.maxImageBytes }),
+    satelliteOverlay,
     { latitude: 66, longitude: 33, timeZone: config.timeZone },
+  )
+  : null;
+const cloudAnimation = cloudDiagnostics && config.cloudAnimation.enabled
+  ? new CloudAnimationService(
+    database,
+    cloudDiagnostics,
+    satelliteOverlay,
+    new AnimationStore(config.cloudAnimation.directory),
+    {
+      intervalMinutes: config.satelliteAnimation.intervalMinutes,
+      windowHours: config.satelliteAnimation.windowHours,
+      retentionHours: config.satelliteAnimation.retentionHours,
+      minFrames: config.satelliteAnimation.minFrames,
+      directory: config.cloudAnimation.directory,
+      maxBytes: config.satelliteAnimation.maxBytes,
+      timeZone: config.timeZone,
+    },
+    logger,
   )
   : null;
 const radar = config.copernicus
@@ -176,6 +195,7 @@ const publicationService = new PublicationService(
   satelliteAnimation,
   detailedSatellite,
   cloudDiagnostics,
+  cloudAnimation,
   radar,
   config.timeZone,
   logger,
@@ -216,6 +236,7 @@ scheduler = new Scheduler(
 
 const healthServer = startHealthServer(database, config.port, logger, maxChannel);
 if (satelliteAnimation) await satelliteAnimation.start();
+if (cloudAnimation) await cloudAnimation.start();
 scheduler.start();
 await deliveryService.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
@@ -223,12 +244,14 @@ if (!maxChannel) logger.warn("MAX_BOT_TOKEN is empty; MAX delivery is disabled")
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");
 if (!satellite) logger.warn("Satellite image delivery is disabled");
 if (!satelliteAnimation) logger.warn("Satellite animation delivery is disabled");
+if (!cloudAnimation) logger.warn("Cloud diagnostic animation delivery is disabled");
 if (!detailedSatellite) logger.warn("Detailed satellite image delivery is disabled");
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutting down");
   scheduler.stop();
   await satelliteAnimation?.stop();
+  await cloudAnimation?.stop();
   await deliveryService.stop();
   await new Promise<void>((resolve) => healthServer.close(() => resolve()));
   await database.close();

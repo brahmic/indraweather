@@ -63,4 +63,23 @@ describe("MaxApiClient", () => {
     const form = await new Response(requests[1]?.body).text();
     expect(form).toContain('filename="satellite.png"');
   });
+
+  it("keeps the image token set returned by MAX", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      const response = url.startsWith(MAX_API_BASE_URL)
+        ? { url: "https://upload.max.test/image" }
+        : { photos: { "1000x800": { token: "image-token" } } };
+      return new Response(JSON.stringify(response), {
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    const client = new MaxApiClient("secret", 1000);
+
+    await expect(client.uploadImage(new Uint8Array([1, 2, 3]), "satellite.png"))
+      .resolves.toEqual({
+        type: "image",
+        payload: { photos: { "1000x800": { token: "image-token" } } },
+      });
+  });
 });

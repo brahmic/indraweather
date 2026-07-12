@@ -18,6 +18,10 @@ const uploadEndpointSchema = z.object({
   token: z.string().optional(),
 });
 const uploadResultSchema = z.object({ token: z.string().optional() }).passthrough();
+const imageUploadResultSchema = z.object({
+  token: z.string().optional(),
+  photos: z.record(z.string(), z.object({ token: z.string() })).optional(),
+}).passthrough();
 
 class MaxApiError extends Error {
   constructor(
@@ -173,6 +177,13 @@ export class MaxApiClient {
       throw error.success
         ? new MaxApiError(response.status, error.data.code, error.data.message)
         : new Error(`MAX ${type} upload returned ${response.status}: ${JSON.stringify(result)}`);
+    }
+    if (type === "image") {
+      const image = imageUploadResultSchema.parse(result);
+      const token = endpoint.token ?? image.token;
+      if (token) return { type, payload: { token } };
+      if (image.photos) return { type, payload: { photos: image.photos } };
+      throw new Error("MAX image upload response has no attachment token");
     }
     const token = endpoint.token ?? uploadResultSchema.parse(result).token;
     if (!token) throw new Error(`MAX ${type} upload response has no attachment token`);

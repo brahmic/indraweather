@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import type { ImageAttachment } from "../delivery/types.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import type {
   EumetsatCatalogClient,
   SentinelPlatform,
@@ -46,22 +47,26 @@ export class DetailedSatelliteService {
     private readonly options: DetailedSatelliteOptions,
   ) {}
 
-  async getLatest(now = new Date()): Promise<DetailedSatelliteResult> {
-    if (this.cached && now.getTime() - this.cached.cachedAt.getTime()
+  async getLatest(now = new Date(), viewport?: MapViewport): Promise<DetailedSatelliteResult> {
+    if (!viewport && this.cached && now.getTime() - this.cached.cachedAt.getTime()
       < this.options.cacheMinutes * 60_000) return this.cached.result;
 
     let result: DetailedSatelliteResult;
     try {
-      result = await this.load(now);
+      result = await this.load(now, viewport);
     } catch {
       result = await this.skipped({ code: "source-unavailable" }, now);
     }
-    this.cached = { result, cachedAt: now };
+    if (!viewport) this.cached = { result, cachedAt: now };
     return result;
   }
 
-  private async load(now: Date): Promise<DetailedSatelliteResult> {
-    const products = await this.catalog.findProducts(
+  private async load(now: Date, viewport?: MapViewport): Promise<DetailedSatelliteResult> {
+    const catalog = viewport ? this.catalog.withViewport(viewport) : this.catalog;
+    const images = viewport ? this.images.withViewport(viewport) : this.images;
+    const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
+    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
+    const products = await catalog.findProducts(
       new Date(now.getTime() - 48 * 3_600_000),
       now,
     );
@@ -83,7 +88,7 @@ export class DetailedSatelliteService {
       const ageHours = (now.getTime() - product.observedAt.getTime()) / 3_600_000;
       if (ageHours > this.options.maxAgeHours) continue;
       try {
-        const image = await this.images.getImage(layerFor(product.platform), product.observedAt);
+        const image = await images.getImage(layerFor(product.platform), product.observedAt);
         const coveragePercent = await imageCoveragePercent(image.data);
         evaluatedImages += 1;
         bestCoverage = Math.max(bestCoverage, coveragePercent);
@@ -91,7 +96,14 @@ export class DetailedSatelliteService {
         return {
           status: "available",
           coveragePercent,
-          attachment: await this.attachment(product, image.data, coveragePercent),
+          attachment: await this.attachment(
+            product,
+            image.data,
+            coveragePercent,
+            images,
+            coastlineOverlay,
+            windOverlay,
+          ),
           partial: coveragePercent < this.options.preferredCoveragePercent
             ? {
               preferredCoveragePercent: this.options.preferredCoveragePercent,
@@ -117,16 +129,19 @@ export class DetailedSatelliteService {
     product: SentinelProduct,
     image: Uint8Array,
     coveragePercent: number,
+    images: EumetviewClient,
+    coastlineOverlay: CoastlineOverlayService,
+    windOverlay: WindOverlayService,
   ): Promise<ImageAttachment> {
     const flattened = await sharp(image)
       .flatten({ background: "#253238" })
       .png()
       .toBuffer();
-    const coastlined = await this.coastlineOverlay.apply(
+    const coastlined = await coastlineOverlay.apply(
       new Uint8Array(flattened),
-      await this.images.getCoastline(),
+      await images.getCoastline(),
     );
-    const data = await this.windOverlay.apply(coastlined, product.observedAt);
+    const data = await windOverlay.apply(coastlined, product.observedAt);
     if (data.byteLength > this.options.maxImageBytes) {
       throw new Error(`Detailed satellite image exceeds ${this.options.maxImageBytes} bytes`);
     }

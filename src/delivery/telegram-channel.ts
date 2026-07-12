@@ -1,8 +1,15 @@
-import { Bot, GrammyError, HttpError, InputFile } from "grammy";
+import { Bot, GrammyError, HttpError, InlineKeyboard, InputFile, InputMediaBuilder } from "grammy";
 import type { PublicationService } from "../application/publication-service.js";
 import type { AppConfig } from "../config.js";
 import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.js";
 import { escapeHtml } from "../domain/bulletin.js";
+import {
+  changeMapViewport,
+  createMapViewport,
+  formatMapExtent,
+  type MapViewport,
+  type MapViewportAction,
+} from "../domain/map-viewport.js";
 import type { ControlPoint } from "../domain/types.js";
 import type { Database } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
@@ -34,6 +41,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "status", description: "Статус обновления" },
       { command: "clouds", description: "Диагностика облаков" },
       { command: "radar", description: "Радар Sentinel-1" },
+      { command: "map", description: "Настроить охват карты" },
     ]);
     this.bot.start({
       onStart: ({ username }) => this.logger.info({ username }, "Telegram bot started"),
@@ -71,7 +79,9 @@ export class TelegramChannel implements DeliveryChannel {
     this.bot.command("weather", async (ctx) => {
       const progress = await ctx.reply("⏳ Собираю прогноз и спутниковые снимки…");
       try {
-        const publication = await this.publications.getFreshOrRun();
+        const publication = await this.publications.getFreshOrRun(
+          await this.getMapViewport(String(ctx.chat.id)),
+        );
         await this.sendPublication(String(ctx.chat.id), publication);
         await ctx.api.deleteMessage(ctx.chat.id, progress.message_id).catch((error: unknown) => {
           this.logger.debug({ error }, "Failed to remove weather progress message");
@@ -113,15 +123,67 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("clouds", async (ctx) => {
-      await this.sendDiagnostic(ctx.chat.id, () => this.publications.getClouds(), "Диагностический снимок облаков временно недоступен.");
+      await this.sendDiagnostic(
+        ctx.chat.id,
+        async () => this.publications.getClouds(await this.getMapViewport(String(ctx.chat.id))),
+        "Диагностический снимок облаков временно недоступен.",
+      );
     });
 
     this.bot.command("radar", async (ctx) => {
       await this.sendDiagnostic(
         ctx.chat.id,
-        async () => [await this.publications.getRadar()],
+        async () => [await this.publications.getRadar(await this.getMapViewport(String(ctx.chat.id)))],
         "Радар Sentinel-1 временно недоступен или ещё не настроен.",
       );
+    });
+
+    this.bot.command("map", async (ctx) => {
+      if (ctx.chat.type !== "private") {
+        await ctx.reply("Настройка карты доступна только в личном чате с ботом.");
+        return;
+      }
+      await ctx.replyWithChatAction("upload_photo");
+      try {
+        const viewport = await this.getMapViewport(String(ctx.chat.id));
+        const image = await this.publications.getMap(viewport);
+        await ctx.replyWithPhoto(new InputFile(image.data, image.filename), {
+          caption: this.mapCaption(image.caption, viewport),
+          reply_markup: this.mapKeyboard(),
+        });
+      } catch (error) {
+        this.logger.warn({ err: error }, "Map request failed");
+        await ctx.reply("Карту сейчас получить не удалось. Попробуйте ещё раз через минуту.");
+      }
+    });
+
+    this.bot.callbackQuery(/^map:(up|down|left|right|zoom-in|zoom-out|refresh)$/u, async (ctx) => {
+      if (!ctx.chat || ctx.chat.type !== "private") {
+        await ctx.answerCallbackQuery({ text: "Настройка доступна только в личном чате." });
+        return;
+      }
+      const action = ctx.match[1] as MapViewportAction | undefined;
+      if (!action) return;
+      await ctx.answerCallbackQuery();
+      try {
+        const current = await this.getMapViewport(String(ctx.chat.id));
+        const viewport = action === "refresh"
+          ? current
+          : changeMapViewport(current, action);
+        if (action !== "refresh") {
+          await this.database.saveMapViewport(this.id, String(ctx.chat.id), viewport.bbox);
+        }
+        const image = await this.publications.getMap(viewport);
+        await ctx.editMessageMedia(
+          InputMediaBuilder.photo(new InputFile(image.data, image.filename), {
+            caption: this.mapCaption(image.caption, viewport),
+          }),
+          { reply_markup: this.mapKeyboard() },
+        );
+      } catch (error) {
+        this.logger.warn({ err: error }, "Map update failed");
+        await ctx.reply("Карту сейчас обновить не удалось. Попробуйте ещё раз через минуту.");
+      }
     });
 
     this.bot.catch((error) => {
@@ -188,6 +250,33 @@ export class TelegramChannel implements DeliveryChannel {
       this.logger.warn({ err: error }, "Satellite diagnostic request failed");
       await this.bot.api.sendMessage(chatId, failure);
     }
+  }
+
+  private async getMapViewport(recipientId: string): Promise<MapViewport> {
+    const saved = await this.database.getMapViewport(this.id, recipientId);
+    return createMapViewport(
+      saved ?? this.config.satellite.bbox,
+      this.config.satellite.width,
+      this.config.satellite.height,
+    );
+  }
+
+  private mapKeyboard(): InlineKeyboard {
+    return new InlineKeyboard()
+      .text("↑", "map:up")
+      .row()
+      .text("←", "map:left")
+      .text("⟳", "map:refresh")
+      .text("→", "map:right")
+      .row()
+      .text("↓", "map:down")
+      .row()
+      .text("−", "map:zoom-out")
+      .text("+", "map:zoom-in");
+  }
+
+  private mapCaption(caption: string, viewport: MapViewport): string {
+    return `${caption}\n${formatMapExtent(viewport)}`;
   }
 
   private async sendAttachment(chatId: string | number, attachment: DeliveryAttachment) {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MapViewport } from "../domain/map-viewport.js";
 
 const tokenSchema = z.object({ access_token: z.string(), expires_in: z.number().positive() });
 const catalogSchema = z.object({
@@ -26,9 +27,12 @@ export class CopernicusRadarClient {
 
   constructor(private readonly options: CopernicusRadarOptions) {}
 
-  async getLatest(now = new Date()): Promise<CopernicusRadarImage> {
+  async getLatest(now = new Date(), viewport?: MapViewport): Promise<CopernicusRadarImage> {
+    const bbox = viewport?.bbox ?? this.options.bbox;
+    const width = viewport?.width ?? this.options.width;
+    const height = viewport?.height ?? this.options.height;
     const token = await this.getToken();
-    const observedAt = await this.getLatestObservation(token, now);
+    const observedAt = await this.getLatestObservation(token, now, bbox);
     const from = new Date(observedAt.getTime() - 60_000);
     const to = new Date(observedAt.getTime() + 60_000);
     const response = await fetch("https://sh.dataspace.copernicus.eu/api/v1/process", {
@@ -37,7 +41,7 @@ export class CopernicusRadarClient {
       body: JSON.stringify({
         input: {
           bounds: {
-            bbox: this.options.bbox,
+            bbox,
             properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" },
           },
           data: [{
@@ -51,8 +55,8 @@ export class CopernicusRadarClient {
           }],
         },
         output: {
-          width: this.options.width,
-          height: this.options.height,
+          width,
+          height,
           responses: [{ identifier: "default", format: { type: "image/png" } }],
         },
         evalscript: EVALSCRIPT,
@@ -86,14 +90,18 @@ export class CopernicusRadarClient {
     return token.access_token;
   }
 
-  private async getLatestObservation(token: string, now: Date): Promise<Date> {
+  private async getLatestObservation(
+    token: string,
+    now: Date,
+    bbox: [number, number, number, number],
+  ): Promise<Date> {
     const from = new Date(now.getTime() - this.options.lookbackDays * 86_400_000);
     const response = await fetch("https://sh.dataspace.copernicus.eu/catalog/v1/search", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({
         collections: ["sentinel-1-grd"],
-        bbox: this.options.bbox,
+        bbox,
         datetime: `${from.toISOString()}/${now.toISOString()}`,
         limit: 100,
       }),

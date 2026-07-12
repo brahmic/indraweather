@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MapViewport } from "../domain/map-viewport.js";
 import { fetchJson } from "./http.js";
 
 const responseSchema = z.object({
@@ -31,6 +32,10 @@ export interface EumetsatCatalogOptions {
 
 export class EumetsatCatalogClient {
   constructor(private readonly options: EumetsatCatalogOptions) {}
+
+  withViewport(viewport: MapViewport): EumetsatCatalogClient {
+    return new EumetsatCatalogClient({ ...this.options, bbox: viewport.bbox });
+  }
 
   async findProducts(start: Date, end: Date): Promise<SentinelProduct[]> {
     const url = new URL(this.options.baseUrl);

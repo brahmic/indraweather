@@ -11,6 +11,7 @@ import type {
 } from "./detailed-satellite-service.js";
 import type { BulletinRecord } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import { renderModelDetails } from "../domain/model-details.js";
 
 export class PublicationService {
@@ -26,8 +27,8 @@ export class PublicationService {
     private readonly logger: Logger,
   ) {}
 
-  async getFreshOrRun(): Promise<Publication> {
-    return this.create(await this.bulletins.getFreshOrRun());
+  async getFreshOrRun(viewport?: MapViewport): Promise<Publication> {
+    return this.create(await this.bulletins.getFreshOrRun(), viewport);
   }
 
   async run(options: RunBulletinOptions): Promise<Publication | null> {
@@ -40,9 +41,9 @@ export class PublicationService {
     return renderModelDetails(bulletin.summary, this.timeZone);
   }
 
-  async getClouds(): Promise<DeliveryAttachment[]> {
+  async getClouds(viewport?: MapViewport): Promise<DeliveryAttachment[]> {
     if (!this.clouds) throw new Error("Cloud diagnostics are disabled");
-    const attachments: DeliveryAttachment[] = [await this.clouds.getLatest()];
+    const attachments: DeliveryAttachment[] = [await this.clouds.getLatest(new Date(), viewport)];
     if (this.cloudAnimation) {
       try {
         const animation = await this.cloudAnimation.getLatest();
@@ -54,16 +55,21 @@ export class PublicationService {
     return attachments;
   }
 
-  async getRadar() {
+  async getRadar(viewport?: MapViewport) {
     if (!this.radar) throw new Error("Sentinel-1 radar is not configured");
-    return this.radar.getLatest();
+    return this.radar.getLatest(viewport);
   }
 
-  private async create(bulletin: BulletinRecord): Promise<Publication> {
+  async getMap(viewport: MapViewport): Promise<DeliveryAttachment> {
+    if (!this.satellite) throw new Error("Satellite imagery is disabled");
+    return this.satellite.getLatest(new Date(), viewport);
+  }
+
+  private async create(bulletin: BulletinRecord, viewport?: MapViewport): Promise<Publication> {
     const attachments: DeliveryAttachment[] = [];
     if (this.satellite) {
       try {
-        attachments.push(await this.satellite.getLatest());
+        attachments.push(await this.satellite.getLatest(new Date(), viewport));
       } catch (error) {
         this.logger.warn({ error, bulletinId: bulletin.id }, "Satellite image is unavailable");
       }
@@ -78,7 +84,7 @@ export class PublicationService {
     }
     let text = bulletin.content;
     if (this.detailedSatellite) {
-      const detail = await this.detailedSatellite.getLatest();
+      const detail = await this.detailedSatellite.getLatest(new Date(), viewport);
       if (detail.status === "available") {
         attachments.push(detail.attachment);
         if (detail.partial) text += `\n\n${formatDetailedSatellitePartial(detail, this.timeZone)}`;

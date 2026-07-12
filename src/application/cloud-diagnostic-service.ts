@@ -1,5 +1,6 @@
 import * as SunCalc from "suncalc";
 import type { ImageAttachment } from "../delivery/types.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { WindOverlayService } from "./wind-overlay-service.js";
@@ -25,9 +26,9 @@ export class CloudDiagnosticService {
     private readonly options: CloudDiagnosticOptions,
   ) {}
 
-  async getLatest(now = new Date()): Promise<ImageAttachment> {
+  async getLatest(now = new Date(), viewport?: MapViewport): Promise<ImageAttachment> {
     const layer = this.selectLayer(now);
-    return this.getLatestForLayer(layer, true);
+    return this.getLatestForLayer(layer, true, viewport);
   }
 
   async getLatestForAnimation(now = new Date()): Promise<CloudAnimationFrame> {
@@ -45,16 +46,20 @@ export class CloudDiagnosticService {
   private async getLatestForLayer(
     layer: SatelliteLayer,
     includeMapContext: boolean,
+    viewport?: MapViewport,
   ): Promise<ImageAttachment> {
-    const metadata = await this.images.getLatestMetadata(layer);
-    const image = await this.images.getImage(layer, metadata.observedAt);
-    const coastlined = await this.coastline.apply(
+    const images = viewport ? this.images.withViewport(viewport) : this.images;
+    const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
+    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
+    const metadata = await images.getLatestMetadata(layer);
+    const image = await images.getImage(layer, metadata.observedAt);
+    const coastlined = await coastline.apply(
       image.data,
-      await this.images.getCoastline(),
+      await images.getCoastline(),
       { includeMapContext },
     );
     const data = includeMapContext
-      ? await this.windOverlay.apply(coastlined, metadata.observedAt)
+      ? await windOverlay.apply(coastlined, metadata.observedAt)
       : coastlined;
     const isDay = layer.name === DAY_LAYER.name;
     const mode = isDay ? "типы облаков" : "туман и низкая облачность";

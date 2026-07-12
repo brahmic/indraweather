@@ -1,4 +1,5 @@
 import type { ImageAttachment } from "../delivery/types.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import type { CopernicusRadarClient } from "../infrastructure/copernicus-radar.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { EumetviewClient } from "../infrastructure/eumetview.js";
@@ -13,10 +14,13 @@ export class RadarService {
     private readonly timeZone: string,
   ) {}
 
-  async getLatest(): Promise<ImageAttachment> {
-    const image = await this.radar.getLatest();
-    const coastlined = await this.coastline.apply(image.data, await this.coastlineSource.getCoastline());
-    const data = await this.windOverlay.apply(coastlined, image.observedAt);
+  async getLatest(viewport?: MapViewport): Promise<ImageAttachment> {
+    const image = await this.radar.getLatest(new Date(), viewport);
+    const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
+    const coastlineSource = viewport ? this.coastlineSource.withViewport(viewport) : this.coastlineSource;
+    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
+    const coastlined = await coastline.apply(image.data, await coastlineSource.getCoastline());
+    const data = await windOverlay.apply(coastlined, image.observedAt);
     const time = new Intl.DateTimeFormat("ru-RU", {
       timeZone: this.timeZone,
       day: "2-digit",

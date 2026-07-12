@@ -96,10 +96,13 @@ describe("TelegramChannel /weather", () => {
     };
     const channel = new TelegramChannel(
       "123:test",
-      {} as never,
+      { getMapViewport: vi.fn(async () => null) } as never,
       publications as never,
       [],
-      { timeZone: "Europe/Moscow" } as never,
+      {
+        timeZone: "Europe/Moscow",
+        satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
+      } as never,
       { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
     );
     channel.bot.api.config.use(async (_previous, method, payload) => {
@@ -153,3 +156,87 @@ describe("TelegramChannel /weather", () => {
     expect(publications.getFreshOrRun).toHaveBeenCalledOnce();
   });
 });
+
+describe("TelegramChannel /map", () => {
+  it("sends the current satellite image with map controls", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getMap: vi.fn(async () => ({
+        kind: "image" as const,
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "image/png" as const,
+        filename: "map.png",
+        caption: "Спутниковый снимок",
+        source: "EUMETSAT",
+        observedAt: new Date(),
+      })),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => null) } as never,
+      publications as never,
+      [],
+      {
+        timeZone: "Europe/Moscow",
+        satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
+      } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      const body = payload as Record<string, unknown>;
+      calls.push({ method, body });
+      return {
+        ok: true,
+        result: {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          photo: [],
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/map", 4));
+
+    expect(calls.map((call) => call.method)).toEqual(["sendChatAction", "sendPhoto"]);
+    expect(publications.getMap).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30, 64, 36, 68],
+      width: 1000,
+      height: 800,
+    }));
+    expect(calls[1]?.body.caption).toContain("Охват: примерно");
+  });
+});
+
+function commandUpdate(text: string, updateId: number) {
+  return {
+    update_id: updateId,
+    message: {
+      message_id: 10,
+      date: 1_783_700_000,
+      chat: { id: 123, type: "private" as const, first_name: "User" },
+      from: { id: 123, is_bot: false as const, first_name: "User" },
+      text,
+      entities: [{ type: "bot_command" as const, offset: 0, length: text.length }],
+    },
+  };
+}
+
+function testBotInfo() {
+  return {
+    id: 999,
+    is_bot: true as const,
+    first_name: "Test",
+    username: "test_bot",
+    can_join_groups: true,
+    can_read_all_group_messages: false,
+    supports_inline_queries: false,
+    can_connect_to_business: false,
+    has_main_web_app: false,
+    has_topics_enabled: false,
+    allows_users_to_create_topics: false,
+    can_manage_bots: false,
+    supports_join_request_queries: false,
+  };
+}

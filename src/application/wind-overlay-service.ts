@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { circularDifference } from "../domain/analysis.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import type { Database, WindOverlayForecast } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
 
@@ -22,6 +23,15 @@ export class WindOverlayService {
     private readonly options: WindOverlayOptions,
     private readonly logger: Logger,
   ) {}
+
+  withViewport(viewport: MapViewport): WindOverlayService {
+    return new WindOverlayService(this.database, {
+      ...this.options,
+      bbox: viewport.bbox,
+      width: viewport.width,
+      height: viewport.height,
+    }, this.logger);
+  }
 
   async apply(
     image: Uint8Array,

@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import type { MapViewport } from "../domain/map-viewport.js";
 import type { CoastlinePath } from "../infrastructure/eumetview.js";
 
 export interface CoastlineOverlayOptions {
@@ -10,6 +11,15 @@ export interface CoastlineOverlayOptions {
 
 export class CoastlineOverlayService {
   constructor(private readonly options: CoastlineOverlayOptions) {}
+
+  withViewport(viewport: MapViewport): CoastlineOverlayService {
+    return new CoastlineOverlayService({
+      ...this.options,
+      bbox: viewport.bbox,
+      width: viewport.width,
+      height: viewport.height,
+    });
+  }
 
   async apply(
     image: Uint8Array,

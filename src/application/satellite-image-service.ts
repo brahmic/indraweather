@@ -1,5 +1,6 @@
 import * as SunCalc from "suncalc";
 import type { ImageAttachment } from "../delivery/types.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { WindOverlayService } from "./wind-overlay-service.js";
@@ -22,8 +23,8 @@ export class SatelliteImageService {
     private readonly options: SatelliteImageOptions,
   ) {}
 
-  async getLatest(now = new Date()): Promise<ImageAttachment> {
-    return this.getLatestForLayer(this.selectLayer(now), now);
+  async getLatest(now = new Date(), viewport?: MapViewport): Promise<ImageAttachment> {
+    return this.getLatestForLayer(this.selectLayer(now), now, true, viewport);
   }
 
   async getLatestInfrared(now = new Date()): Promise<ImageAttachment> {
@@ -34,25 +35,29 @@ export class SatelliteImageService {
     layer: SatelliteLayer,
     now: Date,
     includeMapContext = true,
+    viewport?: MapViewport,
   ): Promise<ImageAttachment> {
-    const cacheKey = `${layer.name}:${includeMapContext ? "context" : "coastline"}`;
+    const cacheKey = `${layer.name}:${includeMapContext ? "context" : "coastline"}:${viewport?.bbox.join(",") ?? "default"}`;
     const cached = this.cached.get(cacheKey);
     if (cached && now.getTime() - cached.cachedAt.getTime() < this.options.cacheMinutes * 60_000) {
       return cached.attachment;
     }
-    const metadata = await this.client.getLatestMetadata(layer);
+    const client = viewport ? this.client.withViewport(viewport) : this.client;
+    const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
+    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
+    const metadata = await client.getLatestMetadata(layer);
     const ageMinutes = (now.getTime() - metadata.observedAt.getTime()) / 60_000;
     if (ageMinutes > this.options.maxAgeMinutes) {
       throw new Error(`Latest EUMETSAT image is ${Math.round(ageMinutes)} minutes old`);
     }
-    const image = await this.client.getImage(layer, metadata.observedAt);
-    const coastlined = await this.coastlineOverlay.apply(
+    const image = await client.getImage(layer, metadata.observedAt);
+    const coastlined = await coastlineOverlay.apply(
       image.data,
-      await this.client.getCoastline(),
+      await client.getCoastline(),
       { includeMapContext },
     );
     const data = includeMapContext
-      ? await this.windOverlay.apply(coastlined, metadata.observedAt)
+      ? await windOverlay.apply(coastlined, metadata.observedAt)
       : coastlined;
     const attachment: ImageAttachment = {
       kind: "image",

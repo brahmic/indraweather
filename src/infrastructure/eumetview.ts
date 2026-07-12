@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { z } from "zod";
+import type { MapViewport } from "../domain/map-viewport.js";
 import { fetchBinary, fetchJson, fetchText } from "./http.js";
 
 const geoJsonSchema = z.object({
@@ -54,6 +55,15 @@ export class EumetviewClient {
       mode: "night",
       style: "mtg_fd:mtg_fd_ir105_hrfi_grayscale",
     };
+  }
+
+  withViewport(viewport: MapViewport): EumetviewClient {
+    return new EumetviewClient({
+      ...this.options,
+      bbox: viewport.bbox,
+      width: viewport.width,
+      height: viewport.height,
+    });
   }
 
   async getLatestMetadata(layer: SatelliteLayer): Promise<{ observedAt: Date }> {

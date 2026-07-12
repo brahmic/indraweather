@@ -56,6 +56,8 @@ export interface WindOverlayForecast {
   }>;
 }
 
+export type StoredMapViewport = [west: number, south: number, east: number, north: number];
+
 export class Database {
   private readonly pool: Pool;
 
@@ -368,6 +370,38 @@ export class Database {
       ORDER BY recipient_id
     `, [channel]);
     return result.rows.map((row) => row.recipient_id);
+  }
+
+  async getMapViewport(channel: string, recipientId: string): Promise<StoredMapViewport | null> {
+    const result = await this.pool.query<{
+      west: number;
+      south: number;
+      east: number;
+      north: number;
+    }>(`
+      SELECT west, south, east, north
+      FROM map_viewports
+      WHERE channel = $1 AND recipient_id = $2
+    `, [channel, recipientId]);
+    const row = result.rows[0];
+    return row ? [row.west, row.south, row.east, row.north] : null;
+  }
+
+  async saveMapViewport(
+    channel: string,
+    recipientId: string,
+    [west, south, east, north]: StoredMapViewport,
+  ): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO map_viewports (channel, recipient_id, west, south, east, north)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (channel, recipient_id) DO UPDATE SET
+        west = EXCLUDED.west,
+        south = EXCLUDED.south,
+        east = EXCLUDED.east,
+        north = EXCLUDED.north,
+        updated_at = now()
+    `, [channel, recipientId, west, south, east, north]);
   }
 
   async enqueueMaxWebhook(fingerprint: string, payload: unknown): Promise<boolean> {

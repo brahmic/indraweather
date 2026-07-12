@@ -306,7 +306,7 @@ if (config.telegramBotToken) {
   channels.push(telegramChannel);
 }
 if (personalAnimations && telegramChannel) {
-  personalAnimations.setDelivery(async (job, attachment) => {
+  personalAnimations.setDelivery(telegramChannel.id, async (job, attachment) => {
     if (job.channel !== telegramChannel.id) {
       throw new Error(`Unsupported personal animation channel: ${job.channel}`);
     }
@@ -323,8 +323,17 @@ const maxChannel = config.max
     config,
     new MaxApiClient(config.max.token),
     logger,
+    personalAnimations,
   )
   : null;
+if (personalAnimations && maxChannel) {
+  personalAnimations.setDelivery(maxChannel.id, async (job, attachment) => {
+    if (job.channel !== maxChannel.id) {
+      throw new Error(`Unsupported personal animation channel: ${job.channel}`);
+    }
+    await maxChannel.sendPersonalAnimation(job.recipientId, attachment);
+  });
+}
 if (maxChannel) channels.push(maxChannel);
 const deliveryService = new DeliveryService(channels, logger);
 scheduler = new Scheduler(
@@ -341,7 +350,7 @@ if (satelliteAnimation) await satelliteAnimation.start();
 if (cloudAnimation) await cloudAnimation.start();
 scheduler.start();
 await deliveryService.start();
-if (personalAnimations && telegramChannel) await personalAnimations.start();
+if (personalAnimations && (telegramChannel || maxChannel)) await personalAnimations.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
 if (!maxChannel) logger.warn("MAX_BOT_TOKEN is empty; MAX delivery is disabled");
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");

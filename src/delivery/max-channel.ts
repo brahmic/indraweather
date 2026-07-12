@@ -1,8 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { PublicationService } from "../application/publication-service.js";
+import type { PersonalAnimationService } from "../application/personal-animation-service.js";
 import type { AppConfig } from "../config.js";
 import { escapeHtml } from "../domain/bulletin.js";
+import {
+  changeMapViewport,
+  createMapViewport,
+  formatMapExtent,
+  type MapViewport,
+  type MapViewportAction,
+} from "../domain/map-viewport.js";
 import type { ControlPoint } from "../domain/types.js";
 import type { Database, MaxWebhookRecord } from "../infrastructure/database.js";
 import type { MaxApiClient, MaxMessageAttachment } from "../infrastructure/max-api.js";
@@ -13,6 +21,15 @@ import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.j
 const userSchema = z.object({
   user_id: z.number(),
   is_bot: z.boolean().optional().default(false),
+}).passthrough();
+
+const messageSchema = z.object({
+  sender: userSchema.nullable().optional(),
+  recipient: z.object({
+    chat_id: z.number().nullable(),
+    chat_type: z.enum(["dialog", "chat", "channel"]),
+  }),
+  body: z.object({ mid: z.string(), text: z.string().nullable() }),
 }).passthrough();
 
 const updateSchema = z.discriminatedUnion("update_type", [
@@ -31,14 +48,18 @@ const updateSchema = z.discriminatedUnion("update_type", [
   z.object({
     update_type: z.literal("message_created"),
     timestamp: z.number(),
-    message: z.object({
-      sender: userSchema.nullable().optional(),
-      recipient: z.object({
-        chat_id: z.number().nullable(),
-        chat_type: z.enum(["dialog", "chat", "channel"]),
-      }),
-      body: z.object({ mid: z.string(), text: z.string().nullable() }),
-    }).passthrough(),
+    message: messageSchema,
+  }).passthrough(),
+  z.object({
+    update_type: z.literal("message_callback"),
+    timestamp: z.number(),
+    callback: z.object({
+      timestamp: z.number(),
+      callback_id: z.string().min(1),
+      payload: z.string().optional(),
+      user: userSchema,
+    }),
+    message: messageSchema.nullable().optional(),
   }).passthrough(),
 ]);
 
@@ -54,6 +75,11 @@ interface MaxApi {
     attachments?: MaxMessageAttachment[],
   ): Promise<string>;
   editMessage(messageId: string, text: string): Promise<void>;
+  answerCallback(
+    callbackId: string,
+    message?: { text: string; attachments: MaxMessageAttachment[] },
+    notification?: string,
+  ): Promise<void>;
   deleteMessage(messageId: string): Promise<void>;
 }
 
@@ -82,6 +108,7 @@ export class MaxChannel implements DeliveryChannel {
     private readonly config: AppConfig,
     private readonly api: MaxApi,
     private readonly logger: Logger,
+    private readonly personalAnimations: PersonalAnimationService | null = null,
   ) {
     this.webhookSecret = createHash("sha256")
       .update("indra:max-webhook:v1\0")
@@ -178,6 +205,10 @@ export class MaxChannel implements DeliveryChannel {
       await this.database.unsubscribe(this.id, String(update.user?.user_id ?? update.chat_id));
       return;
     }
+    if (update.update_type === "message_callback") {
+      await this.processMapCallback(update.callback.callback_id, update.callback.payload, update.callback.user.user_id);
+      return;
+    }
     const sender = update.message.sender;
     const text = update.message.body.text?.trim();
     if (!sender || sender.is_bot || !text || update.message.recipient.chat_type !== "dialog") return;
@@ -203,7 +234,7 @@ export class MaxChannel implements DeliveryChannel {
         await this.sendStatus(sender.user_id);
         break;
       case "clouds":
-        await this.sendDiagnostic(sender.user_id, () => this.publications.getClouds(), "Диагностический снимок облаков временно недоступен.");
+        await this.sendClouds(sender.user_id);
         break;
       case "radar":
         await this.sendDiagnostic(
@@ -211,6 +242,9 @@ export class MaxChannel implements DeliveryChannel {
           async () => [await this.publications.getRadar()],
           "Радар Sentinel-1 временно недоступен или ещё не настроен.",
         );
+        break;
+      case "map":
+        await this.sendMap(sender.user_id);
         break;
     }
   }
@@ -226,17 +260,79 @@ export class MaxChannel implements DeliveryChannel {
   private async sendWeather(userId: number): Promise<void> {
     const progressId = await this.api.sendMessage(userId, "⏳ Собираю прогноз и спутниковые снимки…");
     try {
-      const publication = await this.publications.getFreshOrRun();
+      const map = await this.getMapSelection(userId);
+      const publication = await this.publications.getFreshOrRun(map.viewport, !map.isCustom);
       await this.sendPublication(userId, publication, this.prepareAttachments(publication));
       await this.api.deleteMessage(progressId).catch((error: unknown) => {
         this.logger.debug({ error }, "Failed to remove MAX weather progress message");
       });
+      if (map.isCustom) this.enqueuePersonalAnimation("satellite", userId, map.viewport);
     } catch (error) {
       this.logger.error({ error }, "MAX manual bulletin failed");
       await this.api.editMessage(
         progressId,
         "Не удалось сформировать бюллетень: погодные данные временно недоступны.",
       ).catch(() => undefined);
+    }
+  }
+
+  private async sendClouds(userId: number): Promise<void> {
+    const map = await this.getMapSelection(userId);
+    const sent = await this.sendDiagnostic(
+      userId,
+      () => this.publications.getClouds(map.viewport, !map.isCustom),
+      "Диагностический снимок облаков временно недоступен.",
+    );
+    if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", userId, map.viewport);
+  }
+
+  private async sendMap(userId: number): Promise<void> {
+    try {
+      const viewport = (await this.getMapSelection(userId)).viewport;
+      const image = await this.publications.getMap(viewport);
+      const uploaded = await this.api.uploadImage(image.data, image.filename);
+      await this.api.sendMessage(userId, this.mapCaption(image.caption, viewport), [
+        uploaded,
+        this.mapKeyboard(),
+      ]);
+    } catch (error) {
+      this.logger.warn({ err: error, userId }, "MAX map request failed");
+      await this.api.sendMessage(userId, "Карту сейчас получить не удалось. Попробуйте ещё раз через минуту.");
+    }
+  }
+
+  private async processMapCallback(
+    callbackId: string,
+    payload: string | undefined,
+    userId: number,
+  ): Promise<void> {
+    const action = parseMapAction(payload);
+    if (!action) {
+      await this.api.answerCallback(callbackId, undefined, "Кнопка больше не актуальна.");
+      return;
+    }
+    try {
+      const current = (await this.getMapSelection(userId)).viewport;
+      const viewport = action === "refresh"
+        ? current
+        : changeMapViewport(current, action);
+      if (action !== "refresh") {
+        await this.database.saveMapViewport(this.id, String(userId), viewport.bbox);
+      }
+      const image = await this.publications.getMap(viewport);
+      const uploaded = await this.api.uploadImage(image.data, image.filename);
+      await this.api.answerCallback(callbackId, {
+        text: this.mapCaption(image.caption, viewport),
+        attachments: [uploaded, this.mapKeyboard()],
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, userId, payload }, "MAX map update failed");
+      await this.api.answerCallback(
+        callbackId,
+        undefined,
+        "Карту сейчас обновить не удалось. Попробуйте ещё раз через минуту.",
+      ).catch((answerError: unknown) =>
+        this.logger.warn({ err: answerError, userId }, "MAX map failure callback could not be answered"));
     }
   }
 
@@ -258,26 +354,70 @@ export class MaxChannel implements DeliveryChannel {
     await this.api.sendMessage(userId, `Последнее успешное обновление: ${text}.`);
   }
 
+  private async getMapSelection(userId: number): Promise<{ viewport: MapViewport; isCustom: boolean }> {
+    const saved = await this.database.getMapViewport(this.id, String(userId));
+    return {
+      viewport: createMapViewport(
+        saved ?? this.config.satellite.bbox,
+        this.config.satellite.width,
+        this.config.satellite.height,
+      ),
+      isCustom: saved !== null,
+    };
+  }
+
+  private enqueuePersonalAnimation(
+    kind: "satellite" | "clouds",
+    userId: number,
+    viewport: MapViewport,
+  ): void {
+    if (!this.personalAnimations) return;
+    void this.personalAnimations.request(this.id, String(userId), kind, viewport).catch((error: unknown) =>
+      this.logger.warn({ err: error, kind, userId }, "MAX personal animation request failed"));
+  }
+
+  private mapKeyboard(): MaxMessageAttachment {
+    return {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [{ type: "callback", text: "↑", payload: "map:up" }],
+          [
+            { type: "callback", text: "←", payload: "map:left" },
+            { type: "callback", text: "⟳", payload: "map:refresh" },
+            { type: "callback", text: "→", payload: "map:right" },
+          ],
+          [{ type: "callback", text: "↓", payload: "map:down" }],
+          [
+            { type: "callback", text: "−", payload: "map:zoom-out" },
+            { type: "callback", text: "+", payload: "map:zoom-in" },
+          ],
+        ],
+      },
+    };
+  }
+
+  private mapCaption(caption: string, viewport: MapViewport): string {
+    return formatPostHtml(`${caption}\n${formatMapExtent(viewport)}`, [], true);
+  }
+
   private async sendDiagnostic(
     userId: number,
     getAttachments: () => Promise<DeliveryAttachment[]>,
     failure: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     let attachments: DeliveryAttachment[];
     try {
       attachments = await getAttachments();
     } catch (error) {
       this.logger.warn({ err: error }, "MAX satellite diagnostic request failed");
       await this.api.sendMessage(userId, failure);
-      return;
+      return false;
     }
     let sent = false;
     for (const attachment of attachments) {
       try {
-        const uploaded = attachment.kind === "image"
-          ? await this.api.uploadImage(attachment.data, attachment.filename)
-          : await this.api.uploadVideo(attachment.data, attachment.filename);
-        await this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
+        await this.sendAttachment(userId, attachment);
         sent = true;
       } catch (error) {
         this.logger.warn({ err: error, filename: attachment.filename }, "MAX diagnostic delivery failed");
@@ -286,6 +426,7 @@ export class MaxChannel implements DeliveryChannel {
     if (!sent) {
       await this.api.sendMessage(userId, "Снимок собран, но MAX временно не принял файл. Повторите запрос позже.");
     }
+    return sent;
   }
 
   private async prepareAttachments(publication: Publication): Promise<PreparedAttachment[]> {
@@ -307,6 +448,17 @@ export class MaxChannel implements DeliveryChannel {
       }
     }
     return attachments;
+  }
+
+  private async sendAttachment(userId: number, attachment: DeliveryAttachment): Promise<string> {
+    const uploaded = attachment.kind === "image"
+      ? await this.api.uploadImage(attachment.data, attachment.filename)
+      : await this.api.uploadVideo(attachment.data, attachment.filename);
+    return this.api.sendMessage(userId, formatPostHtml(attachment.caption, [], true), [uploaded]);
+  }
+
+  async sendPersonalAnimation(recipientId: string, attachment: DeliveryAttachment): Promise<void> {
+    await this.sendAttachment(parseRecipientId(recipientId), attachment);
   }
 
   private async deliver(
@@ -387,6 +539,27 @@ function parseCommand(text: string): string | null {
   const token = text.split(/\s/u, 1)[0];
   if (!token?.startsWith("/")) return null;
   return token.slice(1).split("@", 1)[0]?.toLocaleLowerCase("en-US") ?? null;
+}
+
+function parseMapAction(payload: string | undefined): MapViewportAction | null {
+  switch (payload) {
+    case "map:up":
+      return "up";
+    case "map:down":
+      return "down";
+    case "map:left":
+      return "left";
+    case "map:right":
+      return "right";
+    case "map:zoom-in":
+      return "zoom-in";
+    case "map:zoom-out":
+      return "zoom-out";
+    case "map:refresh":
+      return "refresh";
+    default:
+      return null;
+  }
 }
 
 function parseRecipientId(value: string): number {

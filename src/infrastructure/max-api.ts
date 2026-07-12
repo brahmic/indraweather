@@ -33,9 +33,14 @@ class MaxApiError extends Error {
   }
 }
 
-export interface MaxMessageAttachment {
-  type: "image" | "video";
-  payload: object;
+export type MaxMessageAttachment =
+  | { type: "image" | "video"; payload: object }
+  | { type: "inline_keyboard"; payload: { buttons: MaxKeyboardButton[][] } };
+
+export interface MaxKeyboardButton {
+  type: "callback";
+  text: string;
+  payload: string;
 }
 
 export class MaxApiClient {
@@ -56,6 +61,7 @@ export class MaxApiClient {
       { name: "status", description: "Статус обновления" },
       { name: "clouds", description: "Диагностика облаков" },
       { name: "radar", description: "Радар Sentinel-1" },
+      { name: "map", description: "Настроить охват карты" },
       ],
     }));
     await this.ensureWebhook(webhookUrl, webhookSecret);
@@ -97,6 +103,28 @@ export class MaxApiClient {
     )));
   }
 
+  async answerCallback(
+    callbackId: string,
+    message?: { text: string; attachments: MaxMessageAttachment[] },
+    notification?: string,
+  ): Promise<void> {
+    assertAction(actionSchema.parse(await this.request(
+      "POST",
+      "/answers",
+      {
+        ...(message ? {
+          message: {
+            text: message.text,
+            format: "html",
+            attachments: message.attachments,
+          },
+        } : {}),
+        ...(notification ? { notification } : {}),
+      },
+      { callback_id: callbackId },
+    )));
+  }
+
   async deleteMessage(messageId: string): Promise<void> {
     assertAction(actionSchema.parse(await this.request(
       "DELETE",
@@ -109,7 +137,7 @@ export class MaxApiClient {
   private async ensureWebhook(webhookUrl: string, webhookSecret: string): Promise<void> {
     const result = actionSchema.parse(await this.request("POST", "/subscriptions", {
       url: webhookUrl,
-      update_types: ["message_created", "bot_started", "bot_stopped"],
+      update_types: ["message_created", "message_callback", "bot_started", "bot_stopped"],
       secret: webhookSecret,
     }));
     if (!result.success) throw new Error(`MAX webhook registration failed: ${result.message ?? "unknown error"}`);

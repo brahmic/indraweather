@@ -56,9 +56,9 @@ type Delivery = (job: PersonalAnimationJobRecord, attachment: AnimationAttachmen
 
 export class PersonalAnimationService {
   private readonly sources = new Map<PersonalAnimationKind, PersonalAnimationSource>();
+  private readonly deliveries = new Map<string, Delivery>();
   private worker: Promise<void> | null = null;
   private queueTimer: NodeJS.Timeout | null = null;
-  private delivery: Delivery | null = null;
 
   constructor(
     private readonly database: Database,
@@ -73,8 +73,8 @@ export class PersonalAnimationService {
     for (const source of sources) this.sources.set(source.kind, source);
   }
 
-  setDelivery(delivery: Delivery): void {
-    this.delivery = delivery;
+  setDelivery(channel: string, delivery: Delivery): void {
+    this.deliveries.set(channel, delivery);
   }
 
   async start(): Promise<void> {
@@ -152,8 +152,9 @@ export class PersonalAnimationService {
           await this.database.cancelPersonalAnimation(currentJob.id);
           continue;
         }
-        if (!this.delivery) throw new Error("Personal animation delivery is not configured");
-        await this.delivery(currentJob, attachment);
+        const delivery = this.deliveries.get(currentJob.channel);
+        if (!delivery) throw new Error(`Personal animation delivery is not configured: ${currentJob.channel}`);
+        await delivery(currentJob, attachment);
         await this.database.completePersonalAnimation(
           currentJob.id,
           attachment.filename,
@@ -253,7 +254,8 @@ export class PersonalAnimationService {
 
   private async deliverCached(job: PersonalAnimationJobRecord): Promise<void> {
     try {
-      if (!await this.isCurrent(job) || !this.delivery) return;
+      const delivery = this.deliveries.get(job.channel);
+      if (!await this.isCurrent(job) || !delivery) return;
       if (!job.outputFilename || !job.source || !job.startedAt || !job.endedAt || !job.frameCount) return;
       const attachment: AnimationAttachment = {
         kind: "animation",
@@ -273,7 +275,7 @@ export class PersonalAnimationService {
         endedAt: job.endedAt,
         frameCount: job.frameCount,
       };
-      await this.delivery(job, attachment);
+      await delivery(job, attachment);
     } catch (error) {
       this.logger.warn({ error, jobId: job.id }, "Cached personal animation delivery failed");
     }

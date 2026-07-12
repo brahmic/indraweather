@@ -67,7 +67,7 @@ describe("PersonalAnimationService", () => {
       { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
       encoder,
     );
-    service.setDelivery(delivery);
+    service.setDelivery("telegram", delivery);
 
     await expect(service.request("telegram", "123", "satellite", viewport())).resolves.toBe("queued");
     await vi.waitFor(() => expect(delivery).toHaveBeenCalledOnce());
@@ -118,7 +118,7 @@ describe("PersonalAnimationService", () => {
       options(),
       { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     );
-    service.setDelivery(delivery);
+    service.setDelivery("telegram", delivery);
 
     await expect(service.request("telegram", "123", "satellite", viewport())).resolves.toBe("cached");
     await vi.waitFor(() => expect(delivery).toHaveBeenCalledOnce());
@@ -157,7 +157,7 @@ describe("PersonalAnimationService", () => {
       { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     );
     const delivery = vi.fn(async () => undefined);
-    service.setDelivery(delivery);
+    service.setDelivery("telegram", delivery);
 
     await expect(service.request("telegram", "123", "satellite", viewport())).resolves.toBe("queued");
     await vi.waitFor(() => expect(database.cancelPersonalAnimation).toHaveBeenCalledWith(job.id));

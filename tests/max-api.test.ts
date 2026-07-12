@@ -37,7 +37,7 @@ describe("MaxApiClient", () => {
       call.url.pathname === "/subscriptions" && call.method === "POST");
     expect(subscription?.body).toEqual({
       url: "https://weather.example.ru/webhooks/max",
-      update_types: ["message_created", "bot_started", "bot_stopped"],
+      update_types: ["message_created", "message_callback", "bot_started", "bot_stopped"],
       secret: "webhook-secret",
     });
   });
@@ -81,5 +81,42 @@ describe("MaxApiClient", () => {
         type: "image",
         payload: { photos: { "1000x800": { token: "image-token" } } },
       });
+  });
+
+  it("answers a callback by replacing its message with media and a keyboard", async () => {
+    const calls: Array<{ url: URL; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) as unknown : null,
+      });
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }));
+    const client = new MaxApiClient("secret", 1000);
+
+    await client.answerCallback("callback-1", {
+      text: "Карта",
+      attachments: [{
+        type: "inline_keyboard",
+        payload: { buttons: [[{ type: "callback", text: "↑", payload: "map:up" }]] },
+      }],
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      url: expect.objectContaining({ pathname: "/answers", search: "?callback_id=callback-1" }),
+      body: {
+        message: {
+          text: "Карта",
+          format: "html",
+          attachments: [expect.objectContaining({ type: "inline_keyboard" })],
+        },
+      },
+    });
   });
 });

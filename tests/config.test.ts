@@ -42,7 +42,7 @@ describe("loadConfig", () => {
     expect(config.satelliteAnimation).toMatchObject({
       enabled: true,
       intervalMinutes: 20,
-      windowHours: 24,
+      windowHours: 12,
       retentionHours: 26,
       minFrames: 3,
     });

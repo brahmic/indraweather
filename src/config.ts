@@ -44,7 +44,7 @@ const envSchema = z.object({
   SATELLITE_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   SATELLITE_ANIMATION_INTERVAL_MINUTES: z.coerce.number().int().min(10).max(60).default(20),
-  SATELLITE_ANIMATION_WINDOW_HOURS: z.coerce.number().int().min(1).max(24).default(24),
+  SATELLITE_ANIMATION_WINDOW_HOURS: z.coerce.number().int().min(1).max(24).default(12),
   SATELLITE_ANIMATION_RETENTION_HOURS: z.coerce.number().int().min(24).max(72).default(26),
   SATELLITE_ANIMATION_MIN_FRAMES: z.coerce.number().int().min(3).max(72).default(3),
   SATELLITE_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/satellite-animation"),

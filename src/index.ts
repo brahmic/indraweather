@@ -10,6 +10,7 @@ import { PublicationService } from "./application/publication-service.js";
 import { SatelliteImageService } from "./application/satellite-image-service.js";
 import { AnimationStore, SatelliteAnimationService } from "./application/satellite-animation-service.js";
 import { SentinelPassService } from "./application/sentinel-pass-service.js";
+import { WindOverlayService } from "./application/wind-overlay-service.js";
 import { loadConfig, loadControlPoints } from "./config.js";
 import type { DeliveryChannel } from "./delivery/types.js";
 import { startHealthServer } from "./health.js";
@@ -54,6 +55,18 @@ const satelliteOverlay = new CoastlineOverlayService({
   height: config.satellite.height,
   maxImageBytes: config.satellite.maxImageBytes,
 });
+const windOverlay = new WindOverlayService(
+  database,
+  {
+    bbox: config.satellite.bbox,
+    width: config.satellite.width,
+    height: config.satellite.height,
+    maxImageBytes: config.satellite.maxImageBytes,
+    directionAgreementDeg: config.thresholds.directionAgreementDeg,
+    timeZone: config.timeZone,
+  },
+  logger,
+);
 const satellite = config.satellite.enabled
   ? new SatelliteImageService(
     new EumetviewClient({
@@ -67,6 +80,7 @@ const satellite = config.satellite.enabled
       maxImageBytes: config.satellite.maxImageBytes,
     }),
     satelliteOverlay,
+    windOverlay,
     {
       latitude: 66,
       longitude: 33,
@@ -77,11 +91,24 @@ const satellite = config.satellite.enabled
   )
   : null;
 const [detailWest, detailSouth, detailEast, detailNorth] = config.detailedSatellite.bbox;
+const detailedWindOverlay = new WindOverlayService(
+  database,
+  {
+    bbox: config.detailedSatellite.bbox,
+    width: config.detailedSatellite.width,
+    height: config.detailedSatellite.height,
+    maxImageBytes: config.satellite.maxImageBytes,
+    directionAgreementDeg: config.thresholds.directionAgreementDeg,
+    timeZone: config.timeZone,
+  },
+  logger,
+);
 const satelliteAnimation = satellite && config.satelliteAnimation.enabled
   ? new SatelliteAnimationService(
     database,
     satellite,
     satelliteOverlay,
+    windOverlay,
     new AnimationStore(config.satelliteAnimation.directory),
     {
       intervalMinutes: config.satelliteAnimation.intervalMinutes,
@@ -120,6 +147,7 @@ const detailedSatellite = config.detailedSatellite.enabled
       height: config.detailedSatellite.height,
       maxImageBytes: config.satellite.maxImageBytes,
     }),
+    detailedWindOverlay,
     new SentinelPassService(
       new EumetsatTleClient({
         s3aUrl: config.detailedSatellite.tleS3aUrl,
@@ -147,6 +175,7 @@ const cloudDiagnostics = satellite
   ? new CloudDiagnosticService(
     new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.satellite.bbox, width: config.satellite.width, height: config.satellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
     satelliteOverlay,
+    windOverlay,
     { latitude: 66, longitude: 33, timeZone: config.timeZone },
   )
   : null;
@@ -155,6 +184,7 @@ const cloudAnimation = cloudDiagnostics && config.cloudAnimation.enabled
     database,
     cloudDiagnostics,
     satelliteOverlay,
+    windOverlay,
     new AnimationStore(config.cloudAnimation.directory),
     {
       intervalMinutes: config.satelliteAnimation.intervalMinutes,
@@ -173,6 +203,7 @@ const radar = config.copernicus
     new CopernicusRadarClient({ ...config.copernicus, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, maxImageBytes: config.satellite.maxImageBytes }),
     new CoastlineOverlayService({ bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, maxImageBytes: config.satellite.maxImageBytes }),
     new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
+    detailedWindOverlay,
     config.timeZone,
   )
   : null;

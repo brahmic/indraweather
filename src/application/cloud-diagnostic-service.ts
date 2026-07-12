@@ -2,6 +2,7 @@ import * as SunCalc from "suncalc";
 import type { ImageAttachment } from "../delivery/types.js";
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
+import type { WindOverlayService } from "./wind-overlay-service.js";
 
 export interface CloudDiagnosticOptions {
   latitude: number;
@@ -20,6 +21,7 @@ export class CloudDiagnosticService {
   constructor(
     private readonly images: EumetviewClient,
     private readonly coastline: CoastlineOverlayService,
+    private readonly windOverlay: WindOverlayService,
     private readonly options: CloudDiagnosticOptions,
   ) {}
 
@@ -46,11 +48,14 @@ export class CloudDiagnosticService {
   ): Promise<ImageAttachment> {
     const metadata = await this.images.getLatestMetadata(layer);
     const image = await this.images.getImage(layer, metadata.observedAt);
-    const data = await this.coastline.apply(
+    const coastlined = await this.coastline.apply(
       image.data,
       await this.images.getCoastline(),
       { includeMapContext },
     );
+    const data = includeMapContext
+      ? await this.windOverlay.apply(coastlined, metadata.observedAt)
+      : coastlined;
     const isDay = layer.name === DAY_LAYER.name;
     const mode = isDay ? "типы облаков" : "туман и низкая облачность";
     return {

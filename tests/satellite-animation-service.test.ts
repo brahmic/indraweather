@@ -34,7 +34,8 @@ describe("SatelliteAnimationService", () => {
       encode: vi.fn(async (_paths: string[], output: string) => writeFile(output, new Uint8Array([0, 1, 2]))),
     };
     const mapContext = { applyContext: vi.fn(async (image: Uint8Array) => image) };
-    const service = createService(store, frames, encoder, mapContext);
+    const windOverlay = { apply: vi.fn(async (image: Uint8Array) => image) };
+    const service = createService(store, frames, encoder, mapContext, windOverlay);
 
     const animation = await service.getLatest();
 
@@ -51,6 +52,11 @@ describe("SatelliteAnimationService", () => {
     );
     expect((encoder.encode.mock.calls[0]?.[0] as string[]).length).toBe(3);
     expect(mapContext.applyContext).toHaveBeenCalledTimes(3);
+    expect(windOverlay.apply).toHaveBeenCalledWith(
+      expect.any(Uint8Array),
+      frames[2]?.observedAt,
+      { headerTop: 56 },
+    );
   });
 
   it("waits for the minimum number of successful frames", async () => {
@@ -94,6 +100,7 @@ describe("SatelliteAnimationService", () => {
       database as never,
       satellite,
       { applyContext: vi.fn(async (image: Uint8Array) => image) },
+      { apply: vi.fn(async (image: Uint8Array) => image) },
       store,
       options(),
       { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
@@ -119,6 +126,7 @@ function createService(
   frames: Array<{ observedAt: Date; filename: string; byteSize: number; source: string }>,
   encoder: { encode(framePaths: string[], outputPath: string): Promise<void> },
   mapContext = { applyContext: vi.fn(async (image: Uint8Array) => image) },
+  windOverlay = { apply: vi.fn(async (image: Uint8Array) => image) },
 ) {
   return new SatelliteAnimationService(
     {
@@ -126,6 +134,7 @@ function createService(
     } as never,
     { getLatestInfrared: vi.fn() },
     mapContext,
+    windOverlay,
     store,
     options(),
     { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,

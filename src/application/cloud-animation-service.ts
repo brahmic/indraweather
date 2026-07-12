@@ -8,6 +8,7 @@ import type {
 import type { Logger } from "../logger.js";
 import type { CloudAnimationMode, CloudDiagnosticService } from "./cloud-diagnostic-service.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
+import type { WindOverlayService } from "./wind-overlay-service.js";
 import {
   AnimationStore,
   FfmpegAnimationEncoder,
@@ -38,6 +39,7 @@ export class CloudAnimationService {
     private readonly database: Database,
     private readonly clouds: CloudDiagnosticService,
     private readonly mapContext: CoastlineOverlayService,
+    private readonly windOverlay: WindOverlayService,
     private readonly store: AnimationStore,
     private readonly options: CloudAnimationOptions,
     private readonly logger: Logger,
@@ -197,7 +199,11 @@ export class CloudAnimationService {
         frameLabel(mode),
         index === frames.length - 1,
       );
-      await this.store.write(filename, await this.mapContext.applyContext(stamped));
+      const mapped = await this.mapContext.applyContext(stamped);
+      const data = index === frames.length - 1
+        ? await this.windOverlay.apply(mapped, frame.observedAt, { headerTop: 56 })
+        : mapped;
+      await this.store.write(filename, data);
     }));
     return { filenames, paths: filenames.map((filename) => this.store.path(filename)) };
   }

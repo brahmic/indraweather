@@ -2,6 +2,7 @@ import * as SunCalc from "suncalc";
 import type { ImageAttachment } from "../delivery/types.js";
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
+import type { WindOverlayService } from "./wind-overlay-service.js";
 
 export interface SatelliteImageOptions {
   latitude: number;
@@ -17,6 +18,7 @@ export class SatelliteImageService {
   constructor(
     private readonly client: EumetviewClient,
     private readonly coastlineOverlay: CoastlineOverlayService,
+    private readonly windOverlay: WindOverlayService,
     private readonly options: SatelliteImageOptions,
   ) {}
 
@@ -44,11 +46,14 @@ export class SatelliteImageService {
       throw new Error(`Latest EUMETSAT image is ${Math.round(ageMinutes)} minutes old`);
     }
     const image = await this.client.getImage(layer, metadata.observedAt);
-    const data = await this.coastlineOverlay.apply(
+    const coastlined = await this.coastlineOverlay.apply(
       image.data,
       await this.client.getCoastline(),
       { includeMapContext },
     );
+    const data = includeMapContext
+      ? await this.windOverlay.apply(coastlined, metadata.observedAt)
+      : coastlined;
     const attachment: ImageAttachment = {
       kind: "image",
       data,

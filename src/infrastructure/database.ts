@@ -43,6 +43,19 @@ export interface CloudAnimationFrameRecord extends SatelliteAnimationFrameRecord
   mode: "cloudtype" | "fog";
 }
 
+export interface WindOverlayForecast {
+  forecastAt: Date;
+  points: Array<{
+    pointId: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    model: "ecmwf" | "gfs";
+    speedMs: number | null;
+    directionDeg: number | null;
+  }>;
+}
+
 export class Database {
   private readonly pool: Pool;
 
@@ -646,6 +659,57 @@ export class Database {
       DELETE FROM cloud_animation_capture_jobs
       WHERE scheduled_for < $1 AND status IN ('processed', 'failed')
     `, [before]);
+  }
+
+  async getLatestWindOverlay(referenceAt: Date): Promise<WindOverlayForecast | null> {
+    const result = await this.pool.query<{
+      forecast_at: Date;
+      point_id: string;
+      name: string;
+      latitude: number;
+      longitude: number;
+      model: "ecmwf" | "gfs";
+      wind_speed_ms: number | null;
+      wind_direction_deg: number | null;
+    }>(`
+      WITH latest_run AS (
+        SELECT id
+        FROM collection_runs
+        WHERE status IN ('succeeded', 'partial')
+        ORDER BY completed_at DESC NULLS LAST
+        LIMIT 1
+      ), target AS (
+        SELECT forecast_at
+        FROM forecast_values
+        WHERE run_id = (SELECT id FROM latest_run)
+          AND wind_speed_ms IS NOT NULL
+          AND wind_direction_deg IS NOT NULL
+        ORDER BY ABS(EXTRACT(EPOCH FROM (forecast_at - $1)))
+        LIMIT 1
+      )
+      SELECT forecast_at, point_id, name, latitude, longitude, model,
+             wind_speed_ms, wind_direction_deg
+      FROM forecast_values
+      JOIN control_points ON control_points.id = forecast_values.point_id
+      WHERE run_id = (SELECT id FROM latest_run)
+        AND forecast_at = (SELECT forecast_at FROM target)
+        AND control_points.active = true
+      ORDER BY control_points.display_order, model
+    `, [referenceAt]);
+    const first = result.rows[0];
+    if (!first) return null;
+    return {
+      forecastAt: first.forecast_at,
+      points: result.rows.map((row) => ({
+        pointId: row.point_id,
+        name: row.name,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        model: row.model,
+        speedMs: row.wind_speed_ms,
+        directionDeg: row.wind_direction_deg,
+      })),
+    };
   }
 
   async markDelivery(

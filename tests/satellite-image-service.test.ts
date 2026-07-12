@@ -55,6 +55,9 @@ function createService(client: ReturnType<typeof stubClient>) {
       apply: vi.fn(async (image: Uint8Array) => image),
     } as never,
     {
+      apply: vi.fn(async (image: Uint8Array) => image),
+    } as never,
+    {
       latitude: 66,
       longitude: 33,
       maxAgeMinutes: 90,

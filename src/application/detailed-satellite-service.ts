@@ -8,6 +8,7 @@ import type {
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { SentinelPassService } from "./sentinel-pass-service.js";
+import type { WindOverlayService } from "./wind-overlay-service.js";
 
 export type DetailedSatelliteSkipReason =
   | { code: "no-products" }
@@ -40,6 +41,7 @@ export class DetailedSatelliteService {
     private readonly catalog: EumetsatCatalogClient,
     private readonly images: EumetviewClient,
     private readonly coastlineOverlay: CoastlineOverlayService,
+    private readonly windOverlay: WindOverlayService,
     private readonly passes: SentinelPassService,
     private readonly options: DetailedSatelliteOptions,
   ) {}
@@ -120,10 +122,11 @@ export class DetailedSatelliteService {
       .flatten({ background: "#253238" })
       .png()
       .toBuffer();
-    const data = await this.coastlineOverlay.apply(
+    const coastlined = await this.coastlineOverlay.apply(
       new Uint8Array(flattened),
       await this.images.getCoastline(),
     );
+    const data = await this.windOverlay.apply(coastlined, product.observedAt);
     if (data.byteLength > this.options.maxImageBytes) {
       throw new Error(`Detailed satellite image exceeds ${this.options.maxImageBytes} bytes`);
     }

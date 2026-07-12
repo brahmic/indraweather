@@ -27,6 +27,7 @@ describe("DetailedSatelliteService", () => {
       { findProducts: vi.fn(async () => [{ id: "S3A", platform: "Sentinel-3A", observedAt }]) } as never,
       { getImage: vi.fn(async () => ({ data: new Uint8Array(image), contentType: "image/png" })) } as never,
       {} as never,
+      {} as never,
       { nextPass: vi.fn(async () => nextPassAt) } as never,
       {
         maxAgeHours: 12,
@@ -55,6 +56,7 @@ describe("DetailedSatelliteService", () => {
     const observedAt = new Date("2026-07-11T08:00:00Z");
     const nextPassAt = new Date("2026-07-11T18:30:00Z");
     const coastline = { apply: vi.fn(async (data: Uint8Array) => data) };
+    const wind = { apply: vi.fn(async (data: Uint8Array) => data) };
     const service = new DetailedSatelliteService(
       { findProducts: vi.fn(async () => [{ id: "S3A", platform: "Sentinel-3A", observedAt }]) } as never,
       {
@@ -62,6 +64,7 @@ describe("DetailedSatelliteService", () => {
         getCoastline: vi.fn(async () => []),
       } as never,
       coastline as never,
+      wind as never,
       { nextPass: vi.fn(async () => nextPassAt) } as never,
       {
         maxAgeHours: 12,
@@ -81,5 +84,6 @@ describe("DetailedSatelliteService", () => {
       partial: { preferredCoveragePercent: 70, nextPassAt },
     });
     expect(coastline.apply).toHaveBeenCalledOnce();
+    expect(wind.apply).toHaveBeenCalledOnce();
   });
 });

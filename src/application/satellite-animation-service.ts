@@ -37,6 +37,10 @@ interface MapContextOverlay {
   applyContext(image: Uint8Array): Promise<Uint8Array>;
 }
 
+interface WindOverlay {
+  apply(image: Uint8Array, referenceAt: Date, placement?: { headerTop?: number }): Promise<Uint8Array>;
+}
+
 export class SatelliteAnimationService {
   private worker: Promise<void> | null = null;
   private queueTimer: NodeJS.Timeout | null = null;
@@ -47,6 +51,7 @@ export class SatelliteAnimationService {
     private readonly database: Database,
     private readonly satellite: InfraredImageSource,
     private readonly mapContext: MapContextOverlay,
+    private readonly windOverlay: WindOverlay,
     private readonly store: AnimationStore,
     private readonly options: SatelliteAnimationOptions,
     private readonly logger: Logger,
@@ -199,7 +204,11 @@ export class SatelliteAnimationService {
         "EUMETSAT IR",
         index === frames.length - 1,
       );
-      await this.store.write(filename, await this.mapContext.applyContext(stamped));
+      const mapped = await this.mapContext.applyContext(stamped);
+      const data = index === frames.length - 1
+        ? await this.windOverlay.apply(mapped, frame.observedAt, { headerTop: 56 })
+        : mapped;
+      await this.store.write(filename, data);
     }));
     return { filenames, paths: filenames.map((filename) => this.store.path(filename)) };
   }

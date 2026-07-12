@@ -39,10 +39,12 @@ describe("CloudAnimationService", () => {
       getAnimationMode: vi.fn(() => "cloudtype" as const),
     };
     const mapContext = { applyContext: vi.fn(async (data: Uint8Array) => data) };
+    const windOverlay = { apply: vi.fn(async (data: Uint8Array) => data) };
     const service = new CloudAnimationService(
       database as never,
       clouds as never,
       mapContext as never,
+      windOverlay as never,
       store,
       options(),
       logger(),
@@ -59,6 +61,11 @@ describe("CloudAnimationService", () => {
     expect(animation?.caption).toContain("типы облаков · движение");
     expect(database.getCloudAnimationFrames).toHaveBeenCalledWith(expect.any(Date), "cloudtype");
     expect(mapContext.applyContext).toHaveBeenCalledTimes(3);
+    expect(windOverlay.apply).toHaveBeenCalledWith(
+      expect.any(Uint8Array),
+      frames[2]?.observedAt,
+      { headerTop: 56 },
+    );
   });
 
   it("collects the active daytime or nighttime layer through its own durable queue", async () => {
@@ -97,6 +104,7 @@ describe("CloudAnimationService", () => {
       database as never,
       clouds as never,
       { applyContext: vi.fn(async (data: Uint8Array) => data) } as never,
+      { apply: vi.fn(async (data: Uint8Array) => data) } as never,
       store,
       options(),
       logger(),

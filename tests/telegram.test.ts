@@ -145,7 +145,7 @@ describe("TelegramChannel /weather", () => {
 
     expect(calls.map((call) => call.method)).toEqual([
       "sendMessage",
-      "sendAnimation",
+      "sendVideo",
       "sendMessage",
       "deleteMessage",
     ]);

@@ -172,10 +172,10 @@ export class TelegramChannel implements DeliveryChannel {
           { caption: attachment.caption },
         ));
       } else if (attachment.kind === "animation") {
-        messages.push(await this.bot.api.sendAnimation(
+        messages.push(await this.bot.api.sendVideo(
           recipientId,
           new InputFile(attachment.data, attachment.filename),
-          { caption: attachment.caption },
+          { caption: attachment.caption, supports_streaming: true },
         ));
       }
     }

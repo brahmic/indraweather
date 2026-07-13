@@ -40,9 +40,9 @@ export class PublicationService {
     return this.create(await this.bulletins.getFreshOrRun(), viewport);
   }
 
-  async run(options: RunBulletinOptions): Promise<Publication | null> {
+  async run(options: RunBulletinOptions, viewport?: MapViewport): Promise<Publication | null> {
     const bulletin = await this.bulletins.run(options);
-    return bulletin ? this.create(bulletin) : null;
+    return bulletin ? this.create(bulletin, viewport) : null;
   }
 
   async getFreshDetails(): Promise<DetailsPublication> {

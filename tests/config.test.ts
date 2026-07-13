@@ -102,4 +102,21 @@ describe("loadConfig", () => {
       COPERNICUS_CLIENT_ID: "client",
     })).toThrow(/COPERNICUS_CLIENT_ID/u);
   });
+
+  it("parses separate recipient allowlists for the hidden manual update command", () => {
+    const config = loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      UPDATE_TELEGRAM_RECIPIENT_IDS: " 123,456,123 ",
+      UPDATE_MAX_RECIPIENT_IDS: "789",
+    });
+
+    expect(config.manualUpdate).toEqual({
+      telegramRecipientIds: ["123", "456"],
+      maxRecipientIds: ["789"],
+    });
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      UPDATE_TELEGRAM_RECIPIENT_IDS: "not-an-id",
+    })).toThrow(/UPDATE_TELEGRAM_RECIPIENT_IDS/u);
+  });
 });

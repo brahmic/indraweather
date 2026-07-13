@@ -93,6 +93,15 @@ export class TelegramChannel implements DeliveryChannel {
       await this.sendWeather(ctx.chat.id);
     });
 
+    this.bot.command("update", async (ctx) => {
+      if (!this.canForceUpdate(ctx.chat.id)) {
+        this.logger.warn({ chatId: ctx.chat.id }, "Unauthorized Telegram manual update request");
+        await ctx.reply("Команда недоступна.");
+        return;
+      }
+      await this.sendForcedUpdate(ctx.chat.id);
+    });
+
     this.bot.command("details", async (ctx) => {
       await this.sendDetails(ctx.chat.id);
     });
@@ -329,6 +338,29 @@ export class TelegramChannel implements DeliveryChannel {
     }
   }
 
+  private async sendForcedUpdate(chatId: number): Promise<void> {
+    const progress = await this.bot.api.sendMessage(chatId, "⏳ Принудительно обновляю бюллетень…");
+    try {
+      const map = await this.getMapSelection(String(chatId));
+      const publication = await this.publications.run({ kind: "manual" }, map.viewport);
+      if (!publication) {
+        await this.bot.api.editMessageText(chatId, progress.message_id, "Сбор уже выполняется. Попробуйте через минуту.");
+        return;
+      }
+      await this.sendPublication(String(chatId), publication);
+      await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) => {
+        this.logger.debug({ error }, "Failed to remove manual update progress message");
+      });
+    } catch (error) {
+      this.logger.error({ error }, "Telegram manual update failed");
+      await this.bot.api.editMessageText(
+        chatId,
+        progress.message_id,
+        "Не удалось обновить бюллетень: погодные данные временно недоступны.",
+      ).catch(() => undefined);
+    }
+  }
+
   private async sendPointForecastPicker(chatId: number): Promise<void> {
     await this.bot.api.sendMessage(chatId, "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", {
       parse_mode: "HTML",
@@ -441,6 +473,10 @@ export class TelegramChannel implements DeliveryChannel {
       this.logger.warn({ err: error, kind, recipientId }, "Personal animation request failed");
       return "unavailable";
     }
+  }
+
+  private canForceUpdate(chatId: number): boolean {
+    return this.config.manualUpdate.telegramRecipientIds.includes(String(chatId));
   }
 
   private mapKeyboard(): InlineKeyboard {

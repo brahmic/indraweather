@@ -164,6 +164,44 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
+  it("forces a new bulletin only for an allowlisted MAX recipient", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-update",
+        attempts: 1,
+        payload: messageUpdate("/update"),
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = {
+      run: vi.fn(async () => ({ id: "bulletin-1", text: "Обновлённый выпуск", attachments: [] })),
+    };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [],
+      {
+        ...appConfig(),
+        manualUpdate: { telegramRecipientIds: [], maxRecipientIds: ["42"] },
+      } as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-update"));
+
+    expect(publications.run).toHaveBeenCalledWith(
+      { kind: "manual" },
+      expect.objectContaining({ bbox: [30, 64, 36, 68] }),
+    );
+    expect(api.deleteMessage).toHaveBeenCalledOnce();
+    await channel.stop();
+  });
+
   it("sends /map with an inline keyboard", async () => {
     const database = databaseStub();
     database.claimMaxWebhook

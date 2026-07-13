@@ -154,6 +154,78 @@ describe("TelegramChannel /weather", () => {
   });
 });
 
+describe("TelegramChannel /update", () => {
+  it("forces a new bulletin only for an allowlisted recipient", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      run: vi.fn(async () => ({ id: "bulletin-1", text: "Обновлённый выпуск", attachments: [] })),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => null) } as never,
+      publications as never,
+      [],
+      {
+        timeZone: "Europe/Moscow",
+        satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
+        manualUpdate: { telegramRecipientIds: ["123"], maxRecipientIds: [] },
+      } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: method === "deleteMessage" ? true : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/update", 2));
+
+    expect(publications.run).toHaveBeenCalledWith(
+      { kind: "manual" },
+      expect.objectContaining({ bbox: [30, 64, 36, 68] }),
+    );
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendMessage", "deleteMessage"]);
+  });
+
+  it("does not run collection for a recipient outside the allowlist", async () => {
+    const publications = { run: vi.fn() };
+    const channel = new TelegramChannel(
+      "123:test",
+      {} as never,
+      publications as never,
+      [],
+      {
+        timeZone: "Europe/Moscow",
+        satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
+        manualUpdate: { telegramRecipientIds: ["456"], maxRecipientIds: [] },
+      } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method) => ({
+      ok: true,
+      result: {
+        message_id: 1,
+        date: 1_783_700_000,
+        chat: { id: 123, type: "private" },
+        text: method,
+      },
+    }) as never);
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/update", 3));
+
+    expect(publications.run).not.toHaveBeenCalled();
+  });
+});
+
 describe("TelegramChannel /forecast", () => {
   it("shows point buttons and replaces the selection with a five-day forecast", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];

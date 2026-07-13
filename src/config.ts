@@ -23,6 +23,8 @@ const envSchema = z.object({
   SCHEDULE_TIMES: z.string().default("05:00,11:00,17:00,23:00"),
   SCHEDULE_RETRY_MINUTES: z.coerce.number().int().positive().default(15),
   FRESH_FORECAST_MINUTES: z.coerce.number().int().positive().default(60),
+  UPDATE_TELEGRAM_RECIPIENT_IDS: z.string().default(""),
+  UPDATE_MAX_RECIPIENT_IDS: z.string().default(""),
   WEATHER_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   WEATHER_RETRY_COUNT: z.coerce.number().int().min(0).max(5).default(2),
   WIND_CHANGE_THRESHOLD_MS: z.coerce.number().positive().default(2),
@@ -100,6 +102,14 @@ function parseSchedule(value: string): string[] {
   return times.sort();
 }
 
+function parseRecipientIds(value: string, name: string): string[] {
+  const ids = value.split(",").map((item) => item.trim()).filter(Boolean);
+  if (ids.some((id) => !/^[1-9]\d*$/u.test(id))) {
+    throw new Error(`${name} must contain comma-separated positive numeric IDs`);
+  }
+  return [...new Set(ids)];
+}
+
 function assertTimeZone(timeZone: string): void {
   try {
     new Intl.DateTimeFormat("ru-RU", { timeZone }).format(new Date());
@@ -131,6 +141,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     scheduleTimes: parseSchedule(parsed.SCHEDULE_TIMES),
     scheduleRetryMinutes: parsed.SCHEDULE_RETRY_MINUTES,
     freshForecastMinutes: parsed.FRESH_FORECAST_MINUTES,
+    manualUpdate: {
+      telegramRecipientIds: parseRecipientIds(
+        parsed.UPDATE_TELEGRAM_RECIPIENT_IDS,
+        "UPDATE_TELEGRAM_RECIPIENT_IDS",
+      ),
+      maxRecipientIds: parseRecipientIds(parsed.UPDATE_MAX_RECIPIENT_IDS, "UPDATE_MAX_RECIPIENT_IDS"),
+    },
     weatherTimeoutMs: parsed.WEATHER_TIMEOUT_MS,
     weatherRetryCount: parsed.WEATHER_RETRY_COUNT,
     satellite: {

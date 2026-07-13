@@ -247,6 +247,14 @@ export class MaxChannel implements DeliveryChannel {
       case "weather":
         await this.sendWeather(sender.user_id);
         break;
+      case "update":
+        if (!this.canForceUpdate(sender.user_id)) {
+          this.logger.warn({ userId: sender.user_id }, "Unauthorized MAX manual update request");
+          await this.api.sendMessage(sender.user_id, "Команда недоступна.");
+          break;
+        }
+        await this.sendForcedUpdate(sender.user_id);
+        break;
       case "details":
         await this.sendDetails(sender.user_id);
         break;
@@ -297,6 +305,28 @@ export class MaxChannel implements DeliveryChannel {
       await this.api.editMessage(
         progressId,
         "Не удалось сформировать бюллетень: погодные данные временно недоступны.",
+      ).catch(() => undefined);
+    }
+  }
+
+  private async sendForcedUpdate(userId: number): Promise<void> {
+    const progressId = await this.api.sendMessage(userId, "⏳ Принудительно обновляю бюллетень…");
+    try {
+      const map = await this.getMapSelection(userId);
+      const publication = await this.publications.run({ kind: "manual" }, map.viewport);
+      if (!publication) {
+        await this.api.editMessage(progressId, "Сбор уже выполняется. Попробуйте через минуту.");
+        return;
+      }
+      await this.sendPublication(userId, publication, this.prepareAttachments(publication));
+      await this.api.deleteMessage(progressId).catch((error: unknown) => {
+        this.logger.debug({ error }, "Failed to remove MAX manual update progress message");
+      });
+    } catch (error) {
+      this.logger.error({ error }, "MAX manual update failed");
+      await this.api.editMessage(
+        progressId,
+        "Не удалось обновить бюллетень: погодные данные временно недоступны.",
       ).catch(() => undefined);
     }
   }
@@ -559,6 +589,10 @@ export class MaxChannel implements DeliveryChannel {
       this.logger.warn({ err: error, kind, userId }, "MAX personal animation request failed");
       return "unavailable";
     }
+  }
+
+  private canForceUpdate(userId: number): boolean {
+    return this.config.manualUpdate.maxRecipientIds.includes(String(userId));
   }
 
   private mapKeyboard(): MaxMessageAttachment {

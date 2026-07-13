@@ -5,6 +5,7 @@ import { OpenMeteoClient } from "../src/infrastructure/open-meteo.js";
 const point: ControlPoint = {
   id: "sea",
   name: "Море",
+  shortName: "Море",
   latitude: 66,
   longitude: 33,
   order: 1,

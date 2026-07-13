@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import type { MapViewport } from "../domain/map-viewport.js";
+import type { ControlPoint } from "../domain/types.js";
 import type { CoastlinePath } from "../infrastructure/eumetview.js";
 
 export interface CoastlineOverlayOptions {
@@ -7,6 +8,7 @@ export interface CoastlineOverlayOptions {
   width: number;
   height: number;
   maxImageBytes: number;
+  points: readonly ControlPoint[];
 }
 
 export class CoastlineOverlayService {
@@ -87,7 +89,7 @@ export class CoastlineOverlayService {
 
   private renderSettlements(): string {
     const [west, south, east, north] = this.options.bbox;
-    return SETTLEMENTS.filter((place) =>
+    return this.options.points.filter((place) => place.active &&
       place.longitude >= west && place.longitude <= east && place.latitude >= south && place.latitude <= north)
       .map((place) => {
         const [x, y] = this.project(place.longitude, place.latitude);
@@ -98,7 +100,7 @@ export class CoastlineOverlayService {
           <circle cx="${round(x)}" cy="${round(y)}" r="4" fill="#ffd54f" stroke="#17242b" stroke-width="1.5" />
           <text x="${round(textX)}" y="${round(textY)}" text-anchor="${anchor}"
                 fill="#ffffff" stroke="#17242b" stroke-width="3" paint-order="stroke"
-                font-family="Noto Sans, sans-serif" font-size="16" font-weight="600">${place.name}</text>
+                font-family="Noto Sans, sans-serif" font-size="16" font-weight="600">${place.shortName}</text>
         </g>`;
       }).join("\n");
   }
@@ -131,14 +133,6 @@ export class CoastlineOverlayService {
     </g>`;
   }
 }
-
-const SETTLEMENTS = [
-  { name: "Кемь", latitude: 64.983, longitude: 34.748 },
-  { name: "Чупа", latitude: 66.285, longitude: 33.255 },
-  { name: "Ковда", latitude: 66.693, longitude: 32.87 },
-  { name: "Кандалакша", latitude: 67.133, longitude: 32.425 },
-  { name: "Умба", latitude: 66.679, longitude: 34.31 },
-] as const;
 
 function round(value: number): number {
   return Math.round(value * 10) / 10;

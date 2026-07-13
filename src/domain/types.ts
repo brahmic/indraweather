@@ -4,6 +4,7 @@ export type WeatherModel = (typeof WEATHER_MODELS)[number];
 export interface ControlPoint {
   id: string;
   name: string;
+  shortName: string;
   latitude: number;
   longitude: number;
   order: number;

@@ -54,6 +54,7 @@ function point(name: string, index = 0): PointSummary {
     point: {
       id: `point-${index}`,
       name,
+      shortName: name,
       latitude: 66,
       longitude: 33,
       order: index,

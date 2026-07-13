@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { CoastlineOverlayService } from "../src/application/coastline-overlay-service.js";
+import type { ControlPoint } from "../src/domain/types.js";
 
 describe("CoastlineOverlayService", () => {
   it("projects the coast and adds settlement context", async () => {
@@ -17,6 +18,10 @@ describe("CoastlineOverlayService", () => {
       width: 100,
       height: 80,
       maxImageBytes: 100_000,
+      points: [
+        { id: "kem", name: "Кемский рейд", shortName: "Кемь", latitude: 64.983, longitude: 34.748, order: 10, active: true },
+        { id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true },
+      ] satisfies ControlPoint[],
     });
 
     const output = await service.apply(input, [[[30, 64], [36, 68]]]);

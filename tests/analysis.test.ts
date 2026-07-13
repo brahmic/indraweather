@@ -5,6 +5,7 @@ import type { ControlPoint, ForecastValue, WeatherModel } from "../src/domain/ty
 const point: ControlPoint = {
   id: "test",
   name: "Тестовая точка",
+  shortName: "Тест",
   latitude: 66,
   longitude: 33,
   order: 1,

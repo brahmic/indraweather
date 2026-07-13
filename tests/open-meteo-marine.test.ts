@@ -20,7 +20,7 @@ describe("OpenMeteoMarineClient", () => {
     const client = new OpenMeteoMarineClient({ timeoutMs: 1000, retries: 0 });
 
     const result = await client.getSummary({
-      id: "kem", name: "Кемь", latitude: 65, longitude: 34, order: 1, active: true,
+      id: "kem", name: "Кемь", shortName: "Кемь", latitude: 65, longitude: 34, order: 1, active: true,
     });
 
     expect(result).toMatchObject({

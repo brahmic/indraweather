@@ -10,6 +10,7 @@ const summary: BulletinSummary = {
     point: {
       id: "one",
       name: "Точка <1>",
+      shortName: "Точка",
       latitude: 66,
       longitude: 33,
       order: 1,

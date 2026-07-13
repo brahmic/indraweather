@@ -79,6 +79,7 @@ const envSchema = z.object({
 const pointSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/),
   name: z.string().min(1),
+  shortName: z.string().min(1),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   order: z.number().int(),

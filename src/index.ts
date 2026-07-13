@@ -59,6 +59,7 @@ const satelliteOverlay = new CoastlineOverlayService({
   width: config.satellite.width,
   height: config.satellite.height,
   maxImageBytes: config.satellite.maxImageBytes,
+  points,
 });
 const windOverlay = new WindOverlayService(
   database,
@@ -151,6 +152,7 @@ const detailedSatellite = config.detailedSatellite.enabled
       width: config.detailedSatellite.width,
       height: config.detailedSatellite.height,
       maxImageBytes: config.satellite.maxImageBytes,
+      points,
     }),
     detailedWindOverlay,
     new SentinelPassService(
@@ -261,7 +263,13 @@ const personalAnimations = config.personalAnimation.enabled && personalAnimation
 const radar = config.copernicus
   ? new RadarService(
     new CopernicusRadarClient({ ...config.copernicus, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, maxImageBytes: config.satellite.maxImageBytes }),
-    new CoastlineOverlayService({ bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, maxImageBytes: config.satellite.maxImageBytes }),
+    new CoastlineOverlayService({
+      bbox: config.detailedSatellite.bbox,
+      width: config.detailedSatellite.width,
+      height: config.detailedSatellite.height,
+      maxImageBytes: config.satellite.maxImageBytes,
+      points,
+    }),
     new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
     detailedWindOverlay,
     config.timeZone,

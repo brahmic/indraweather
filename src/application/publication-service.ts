@@ -1,5 +1,5 @@
 import type { BulletinService, RunBulletinOptions } from "./bulletin-service.js";
-import type { DeliveryAttachment, Publication } from "../delivery/types.js";
+import type { AnimationAttachment, DeliveryAttachment, Publication } from "../delivery/types.js";
 import type { SatelliteAnimationService } from "./satellite-animation-service.js";
 import type { CloudDiagnosticService } from "./cloud-diagnostic-service.js";
 import type { CloudAnimationService } from "./cloud-animation-service.js";
@@ -36,8 +36,8 @@ export class PublicationService {
     private readonly logger: Logger,
   ) {}
 
-  async getFreshOrRun(viewport?: MapViewport, includeAnimations = true): Promise<Publication> {
-    return this.create(await this.bulletins.getFreshOrRun(), viewport, includeAnimations);
+  async getFreshOrRun(viewport?: MapViewport): Promise<Publication> {
+    return this.create(await this.bulletins.getFreshOrRun(), viewport);
   }
 
   async run(options: RunBulletinOptions): Promise<Publication | null> {
@@ -63,6 +63,13 @@ export class PublicationService {
 
   async getPointForecast(pointId: string): Promise<string> {
     return this.pointForecasts.get(pointId);
+  }
+
+  async getSatelliteAnimation(): Promise<AnimationAttachment> {
+    if (!this.satelliteAnimation) throw new Error("Satellite animation is disabled");
+    const animation = await this.satelliteAnimation.getLatest();
+    if (!animation) throw new Error("Satellite animation does not have enough frames");
+    return animation;
   }
 
   async getClouds(viewport?: MapViewport, includeAnimation = true): Promise<DeliveryAttachment[]> {
@@ -92,7 +99,6 @@ export class PublicationService {
   private async create(
     bulletin: BulletinRecord,
     viewport?: MapViewport,
-    includeAnimations = true,
   ): Promise<Publication> {
     const attachments: DeliveryAttachment[] = [];
     if (this.satellite) {
@@ -100,14 +106,6 @@ export class PublicationService {
         attachments.push(await this.satellite.getLatest(new Date(), viewport));
       } catch (error) {
         this.logger.warn({ error, bulletinId: bulletin.id }, "Satellite image is unavailable");
-      }
-    }
-    if (includeAnimations && this.satelliteAnimation) {
-      try {
-        const animation = await this.satelliteAnimation.getLatest();
-        if (animation) attachments.push(animation);
-      } catch (error) {
-        this.logger.warn({ error, bulletinId: bulletin.id }, "Satellite animation is unavailable");
       }
     }
     let text = bulletin.content;

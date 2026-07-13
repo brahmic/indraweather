@@ -154,7 +154,9 @@ describe("MaxChannel", () => {
           buttons: [[
             expect.objectContaining({ payload: "bulletin:details" }),
             expect.objectContaining({ payload: "bulletin:clouds" }),
-          ], [expect.objectContaining({ payload: "bulletin:forecast" })]],
+          ], [expect.objectContaining({ payload: "bulletin:forecast" })], [
+            expect.objectContaining({ payload: "bulletin:animation" }),
+          ]],
         },
       }),
     ]);
@@ -554,20 +556,18 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
-  it("queues a custom animation after MAX /weather", async () => {
+  it("queues a custom animation after MAX /animation", async () => {
     const database = databaseStub();
     database.getMapViewport.mockResolvedValue([30.5, 64, 36.5, 68]);
     database.claimMaxWebhook
       .mockResolvedValueOnce({
         fingerprint: "event-weather-custom",
         attempts: 1,
-        payload: weatherUpdate(),
+        payload: messageUpdate("/animation"),
       } as never)
       .mockResolvedValueOnce(null);
     const api = apiStub();
-    const publications = {
-      getFreshOrRun: vi.fn(async () => ({ id: "bulletin-1", text: "Weather", attachments: [] })),
-    };
+    const publications = {};
     const personalAnimations = { request: vi.fn(async () => "queued") };
     const channel = new MaxChannel(
       "token",
@@ -584,15 +584,55 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledOnce());
 
-    expect(publications.getFreshOrRun).toHaveBeenCalledWith(expect.objectContaining({
-      bbox: [30.5, 64, 36.5, 68],
-    }), false);
     expect(personalAnimations.request).toHaveBeenCalledWith(
       "max",
       "42",
       "satellite",
       expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
     );
+    await channel.stop();
+  });
+
+  it("sends the ready standard animation only after MAX /animation", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-animation",
+        attempts: 1,
+        payload: messageUpdate("/animation"),
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = {
+      getSatelliteAnimation: vi.fn(async () => ({
+        kind: "animation" as const,
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "video/mp4" as const,
+        filename: "movement.mp4",
+        caption: "Движение облаков",
+        source: "EUMETSAT",
+        startedAt: new Date(),
+        endedAt: new Date(),
+        frameCount: 3,
+      })),
+    };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-animation"));
+
+    expect(publications.getSatelliteAnimation).toHaveBeenCalledOnce();
+    expect(api.uploadVideo).toHaveBeenCalledWith(expect.any(Uint8Array), "movement.mp4");
+    expect(api.deleteMessage).toHaveBeenCalledOnce();
     await channel.stop();
   });
 });

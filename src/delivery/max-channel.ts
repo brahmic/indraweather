@@ -250,6 +250,9 @@ export class MaxChannel implements DeliveryChannel {
       case "details":
         await this.sendDetails(sender.user_id);
         break;
+      case "animation":
+        await this.sendSatelliteAnimation(sender.user_id);
+        break;
       case "forecast":
         await this.sendPointForecastPicker(sender.user_id);
         break;
@@ -284,12 +287,11 @@ export class MaxChannel implements DeliveryChannel {
     const progressId = await this.api.sendMessage(userId, "⏳ Собираю прогноз и спутниковые снимки…");
     try {
       const map = await this.getMapSelection(userId);
-      const publication = await this.publications.getFreshOrRun(map.viewport, !map.isCustom);
+      const publication = await this.publications.getFreshOrRun(map.viewport);
       await this.sendPublication(userId, publication, this.prepareAttachments(publication));
       await this.api.deleteMessage(progressId).catch((error: unknown) => {
         this.logger.debug({ error }, "Failed to remove MAX weather progress message");
       });
-      if (map.isCustom) this.enqueuePersonalAnimation("satellite", userId, map.viewport);
     } catch (error) {
       this.logger.error({ error }, "MAX manual bulletin failed");
       await this.api.editMessage(
@@ -332,6 +334,32 @@ export class MaxChannel implements DeliveryChannel {
     } catch (error) {
       this.logger.error({ error }, "MAX detailed model bulletin failed");
       await this.api.sendMessage(userId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");
+    }
+  }
+
+  private async sendSatelliteAnimation(userId: number): Promise<void> {
+    const progressId = await this.api.sendMessage(userId, "⏳ Готовлю анимацию движения облаков…");
+    try {
+      const map = await this.getMapSelection(userId);
+      if (map.isCustom) {
+        const result = await this.requestPersonalAnimation("satellite", userId, map.viewport);
+        const text = result === "queued"
+          ? "⏳ Собираю анимацию для вашего охвата. Ролик придёт отдельным сообщением."
+          : result === "cached"
+          ? "⏳ Отправляю готовую анимацию для вашего охвата."
+          : "Анимация пока недоступна: недостаточно кадров или персональная обработка выключена.";
+        await this.api.editMessage(progressId, text);
+        return;
+      }
+      await this.sendAttachment(userId, await this.publications.getSatelliteAnimation());
+      await this.api.deleteMessage(progressId).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove MAX satellite animation progress message"));
+    } catch (error) {
+      this.logger.error({ error }, "MAX satellite animation request failed");
+      await this.api.editMessage(
+        progressId,
+        "Анимация пока недоступна: недостаточно кадров или источник временно не отвечает.",
+      ).catch(() => undefined);
     }
   }
 
@@ -401,9 +429,12 @@ export class MaxChannel implements DeliveryChannel {
     }
     const title = action === "details"
       ? "⏳ Готовлю детализацию по моделям…"
+      : action === "animation"
+      ? "⏳ Готовлю анимацию движения облаков…"
       : "⏳ Собираю информацию об облачности…";
     await this.api.answerCallback(callbackId, { text: title, attachments: [] });
     if (action === "details") await this.sendDetails(userId);
+    else if (action === "animation") await this.sendSatelliteAnimation(userId);
     else await this.sendClouds(userId);
   }
 
@@ -513,9 +544,21 @@ export class MaxChannel implements DeliveryChannel {
     userId: number,
     viewport: MapViewport,
   ): void {
-    if (!this.personalAnimations) return;
-    void this.personalAnimations.request(this.id, String(userId), kind, viewport).catch((error: unknown) =>
-      this.logger.warn({ err: error, kind, userId }, "MAX personal animation request failed"));
+    void this.requestPersonalAnimation(kind, userId, viewport);
+  }
+
+  private async requestPersonalAnimation(
+    kind: "satellite" | "clouds",
+    userId: number,
+    viewport: MapViewport,
+  ): Promise<"queued" | "cached" | "unavailable"> {
+    if (!this.personalAnimations) return "unavailable";
+    try {
+      return await this.personalAnimations.request(this.id, String(userId), kind, viewport);
+    } catch (error) {
+      this.logger.warn({ err: error, kind, userId }, "MAX personal animation request failed");
+      return "unavailable";
+    }
   }
 
   private mapKeyboard(): MaxMessageAttachment {
@@ -564,6 +607,8 @@ export class MaxChannel implements DeliveryChannel {
           { type: "callback", text: "☁️ Облака", payload: "bulletin:clouds" },
         ], [
           { type: "callback", text: "🗓️ Прогноз 5 дней", payload: "bulletin:forecast" },
+        ], [
+          { type: "callback", text: "▶️ Движение облаков", payload: "bulletin:animation" },
         ]],
       },
     };
@@ -778,9 +823,10 @@ function parsePointForecastId(payload: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-function parseBulletinAction(payload: string | undefined): "details" | "clouds" | "forecast" | null {
+function parseBulletinAction(payload: string | undefined): "details" | "clouds" | "forecast" | "animation" | null {
   return payload === "bulletin:details" || payload === "bulletin:clouds" || payload === "bulletin:forecast"
-    ? payload.slice("bulletin:".length) as "details" | "clouds" | "forecast"
+    || payload === "bulletin:animation"
+    ? payload.slice("bulletin:".length) as "details" | "clouds" | "forecast" | "animation"
     : null;
 }
 

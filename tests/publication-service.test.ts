@@ -139,4 +139,34 @@ describe("PublicationService", () => {
     expect(details.attachments).toEqual([map]);
     expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt);
   });
+
+  it("keeps satellite animation out of regular bulletins and exposes it on demand", async () => {
+    const animation = { kind: "animation", filename: "movement.mp4" } as never;
+    const satelliteAnimation = { getLatest: vi.fn(async () => animation) };
+    const service = new PublicationService(
+      {
+        getFreshOrRun: async () => ({
+          id: "bulletin-1",
+          content: "weather",
+          contentFormat: "plain",
+          summary: {},
+          createdAt: new Date(),
+        }),
+      } as never,
+      null,
+      satelliteAnimation as never,
+      null,
+      null,
+      null,
+      null,
+      null,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow",
+      { warn: () => undefined } as never,
+    );
+
+    await expect(service.getFreshOrRun()).resolves.toMatchObject({ attachments: [] });
+    await expect(service.getSatelliteAnimation()).resolves.toBe(animation);
+    expect(satelliteAnimation.getLatest).toHaveBeenCalledOnce();
+  });
 });

@@ -81,17 +81,7 @@ describe("TelegramChannel /weather", () => {
       getFreshOrRun: vi.fn(async () => ({
         id: "bulletin-1",
         text: "Кемь — Кандалакша · гидрометеосводка",
-        attachments: [{
-          kind: "animation" as const,
-          data: new Uint8Array([1, 2, 3]),
-          contentType: "video/mp4" as const,
-          filename: "clouds.mp4",
-          caption: "Clouds",
-          source: "EUMETSAT",
-          startedAt: new Date(),
-          endedAt: new Date(),
-          frameCount: 3,
-        }],
+        attachments: [],
       })),
     };
     const channel = new TelegramChannel(
@@ -148,16 +138,17 @@ describe("TelegramChannel /weather", () => {
 
     expect(calls.map((call) => call.method)).toEqual([
       "sendMessage",
-      "sendVideo",
       "sendMessage",
       "deleteMessage",
     ]);
     expect(calls[0]?.body.text).toContain("Собираю прогноз");
-    expect(calls[2]?.body.reply_markup).toEqual(expect.objectContaining({
+    expect(calls[1]?.body.reply_markup).toEqual(expect.objectContaining({
       inline_keyboard: [[
         expect.objectContaining({ callback_data: "bulletin:details" }),
         expect.objectContaining({ callback_data: "bulletin:clouds" }),
-      ], [expect.objectContaining({ callback_data: "bulletin:forecast" })]],
+      ], [expect.objectContaining({ callback_data: "bulletin:forecast" })], [
+        expect.objectContaining({ callback_data: "bulletin:animation" }),
+      ]],
     }));
     expect(publications.getFreshOrRun).toHaveBeenCalledOnce();
   });
@@ -457,11 +448,9 @@ describe("TelegramChannel /map", () => {
 });
 
 describe("TelegramChannel personal animation", () => {
-  it("queues a custom animation after /weather without attaching the standard one", async () => {
+  it("queues a custom animation only after /animation", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
-    const publications = {
-      getFreshOrRun: vi.fn(async () => ({ id: "bulletin-1", text: "Weather", attachments: [] })),
-    };
+    const publications = {};
     const personalAnimations = { request: vi.fn(async () => "queued") };
     const channel = new TelegramChannel(
       "123:test",
@@ -489,19 +478,61 @@ describe("TelegramChannel personal animation", () => {
     });
     channel.bot.botInfo = testBotInfo();
 
-    await channel.bot.handleUpdate(commandUpdate("/weather", 5));
+    await channel.bot.handleUpdate(commandUpdate("/animation", 5));
     await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledOnce());
 
-    expect(publications.getFreshOrRun).toHaveBeenCalledWith(expect.objectContaining({
-      bbox: [30.5, 64, 36.5, 68],
-    }), false);
     expect(personalAnimations.request).toHaveBeenCalledWith(
       "telegram",
       "123",
       "satellite",
       expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
     );
-    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendMessage", "deleteMessage"]);
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "editMessageText"]);
+  });
+});
+
+describe("TelegramChannel /animation", () => {
+  it("sends the ready standard animation only after an explicit request", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getSatelliteAnimation: vi.fn(async () => ({
+        kind: "animation" as const,
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "video/mp4" as const,
+        filename: "movement.mp4",
+        caption: "Движение облаков",
+        source: "EUMETSAT",
+        startedAt: new Date(),
+        endedAt: new Date(),
+        frameCount: 3,
+      })),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => null) } as never,
+      publications as never,
+      [],
+      { timeZone: "Europe/Moscow", satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 } } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: method === "deleteMessage" ? true : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/animation", 14));
+
+    expect(publications.getSatelliteAnimation).toHaveBeenCalledOnce();
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendVideo", "deleteMessage"]);
   });
 });
 

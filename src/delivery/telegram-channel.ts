@@ -41,6 +41,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "stop", description: "Отключить уведомления" },
       { command: "weather", description: "Актуальный бюллетень" },
       { command: "details", description: "ECMWF и GFS отдельно" },
+      { command: "animation", description: "Движение облаков" },
       { command: "forecast", description: "Прогноз на 5 дней" },
       { command: "points", description: "Контрольные точки" },
       { command: "status", description: "Статус обновления" },
@@ -94,6 +95,10 @@ export class TelegramChannel implements DeliveryChannel {
 
     this.bot.command("details", async (ctx) => {
       await this.sendDetails(ctx.chat.id);
+    });
+
+    this.bot.command("animation", async (ctx) => {
+      await this.sendSatelliteAnimation(ctx.chat.id);
     });
 
     this.bot.command("forecast", async (ctx) => {
@@ -194,7 +199,7 @@ export class TelegramChannel implements DeliveryChannel {
       }
     });
 
-    this.bot.callbackQuery(/^bulletin:(details|clouds|forecast)$/u, async (ctx) => {
+    this.bot.callbackQuery(/^bulletin:(details|clouds|forecast|animation)$/u, async (ctx) => {
       const action = ctx.match[1];
       if (!ctx.chat) {
         await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
@@ -203,6 +208,7 @@ export class TelegramChannel implements DeliveryChannel {
       await ctx.answerCallbackQuery();
       if (action === "details") await this.sendDetails(ctx.chat.id);
       else if (action === "clouds") await this.sendClouds(ctx.chat.id);
+      else if (action === "animation") await this.sendSatelliteAnimation(ctx.chat.id);
       else await this.sendPointForecastPicker(ctx.chat.id);
     });
 
@@ -310,12 +316,11 @@ export class TelegramChannel implements DeliveryChannel {
     const progress = await this.bot.api.sendMessage(chatId, "⏳ Собираю прогноз и спутниковые снимки…");
     try {
       const map = await this.getMapSelection(String(chatId));
-      const publication = await this.publications.getFreshOrRun(map.viewport, !map.isCustom);
+      const publication = await this.publications.getFreshOrRun(map.viewport);
       await this.sendPublication(String(chatId), publication);
       await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) => {
         this.logger.debug({ error }, "Failed to remove weather progress message");
       });
-      if (map.isCustom) this.enqueuePersonalAnimation("satellite", String(chatId), map.viewport);
     } catch (error) {
       this.logger.error({ error }, "Manual bulletin failed");
       const failure = "Не удалось сформировать бюллетень: погодные данные временно недоступны.";
@@ -329,6 +334,33 @@ export class TelegramChannel implements DeliveryChannel {
       parse_mode: "HTML",
       reply_markup: this.forecastKeyboard(),
     });
+  }
+
+  private async sendSatelliteAnimation(chatId: number): Promise<void> {
+    const progress = await this.bot.api.sendMessage(chatId, "⏳ Готовлю анимацию движения облаков…");
+    try {
+      const map = await this.getMapSelection(String(chatId));
+      if (map.isCustom) {
+        const result = await this.requestPersonalAnimation("satellite", String(chatId), map.viewport);
+        const text = result === "queued"
+          ? "⏳ Собираю анимацию для вашего охвата. Ролик придёт отдельным сообщением."
+          : result === "cached"
+          ? "⏳ Отправляю готовую анимацию для вашего охвата."
+          : "Анимация пока недоступна: недостаточно кадров или персональная обработка выключена.";
+        await this.bot.api.editMessageText(chatId, progress.message_id, text);
+        return;
+      }
+      await this.sendAttachment(chatId, await this.publications.getSatelliteAnimation());
+      await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove satellite animation progress message"));
+    } catch (error) {
+      this.logger.error({ error }, "Satellite animation request failed");
+      await this.bot.api.editMessageText(
+        chatId,
+        progress.message_id,
+        "Анимация пока недоступна: недостаточно кадров или источник временно не отвечает.",
+      ).catch(() => undefined);
+    }
   }
 
   private async sendClouds(chatId: number): Promise<void> {
@@ -394,9 +426,21 @@ export class TelegramChannel implements DeliveryChannel {
     recipientId: string,
     viewport: MapViewport,
   ): void {
-    if (!this.personalAnimations) return;
-    void this.personalAnimations.request(this.id, recipientId, kind, viewport).catch((error: unknown) =>
-      this.logger.warn({ err: error, kind, recipientId }, "Personal animation request failed"));
+    void this.requestPersonalAnimation(kind, recipientId, viewport);
+  }
+
+  private async requestPersonalAnimation(
+    kind: "satellite" | "clouds",
+    recipientId: string,
+    viewport: MapViewport,
+  ): Promise<"queued" | "cached" | "unavailable"> {
+    if (!this.personalAnimations) return "unavailable";
+    try {
+      return await this.personalAnimations.request(this.id, recipientId, kind, viewport);
+    } catch (error) {
+      this.logger.warn({ err: error, kind, recipientId }, "Personal animation request failed");
+      return "unavailable";
+    }
   }
 
   private mapKeyboard(): InlineKeyboard {
@@ -427,7 +471,9 @@ export class TelegramChannel implements DeliveryChannel {
       .text("🔬 Детали", "bulletin:details")
       .text("☁️ Облака", "bulletin:clouds")
       .row()
-      .text("🗓️ Прогноз 5 дней", "bulletin:forecast");
+      .text("🗓️ Прогноз 5 дней", "bulletin:forecast")
+      .row()
+      .text("▶️ Движение облаков", "bulletin:animation");
   }
 
   private helpKeyboard(): InlineKeyboard {

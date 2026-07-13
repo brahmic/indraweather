@@ -58,12 +58,13 @@ export class MaxApiClient {
         { name: "stop", description: "Отключить уведомления" },
         { name: "weather", description: "Актуальный бюллетень" },
         { name: "details", description: "ECMWF и GFS отдельно" },
+        { name: "animation", description: "Движение облаков" },
         { name: "forecast", description: "Прогноз на 5 дней" },
         { name: "points", description: "Контрольные точки" },
-      { name: "status", description: "Статус обновления" },
-      { name: "clouds", description: "Диагностика облаков" },
-      { name: "radar", description: "Радар Sentinel-1" },
-      { name: "map", description: "Настроить охват карты" },
+        { name: "status", description: "Статус обновления" },
+        { name: "clouds", description: "Диагностика облаков" },
+        { name: "radar", description: "Радар Sentinel-1" },
+        { name: "map", description: "Настроить охват карты" },
       ],
     }));
     await this.ensureWebhook(webhookUrl, webhookSecret);

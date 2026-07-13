@@ -24,7 +24,8 @@ export function formatHelpHtml(scheduleTimes: string[], subscriptionEnabled = fa
     "<code>/radar</code> — поверхность по Sentinel-1 сквозь облака; ледяную обстановку нужно трактовать осторожно.",
     "",
     "<b>Анимации</b>",
+    "<code>/animation</code> — движение облачности за последние 12 часов.",
     "Ролики показывают до 12 часов движения облачности и появляются после трёх успешных кадров.",
-    "Для личной карты ролик приходит отдельно после <code>/weather</code> или <code>/clouds</code>; настройка <code>/map</code> сама ничего не отправляет.",
+    "Для личной карты ролик приходит отдельно после <code>/animation</code> или <code>/clouds</code>; настройка <code>/map</code> сама ничего не отправляет.",
   ].join("\n");
 }

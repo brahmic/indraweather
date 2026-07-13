@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderBulletin, windDirectionLabel } from "../src/domain/bulletin.js";
-import type { BulletinSummary, MarinePointSummary } from "../src/domain/types.js";
+import type { BulletinSummary, MarinePointSummary, TideExtreme } from "../src/domain/types.js";
 
 const summary: BulletinSummary = {
   generatedAt: "2026-07-11T05:00:00.000Z",
@@ -72,6 +72,27 @@ const marine: MarinePointSummary = {
   currentDirectionDeg: 90,
   seaSurfaceTemperatureC: 8,
 };
+
+const tides: TideExtreme[] = [
+  {
+    pointId: "one",
+    extremeAt: new Date("2026-07-11T08:00:00Z"),
+    type: "high",
+    heightM: 1.4,
+    source: "Stormglass",
+    stationName: "Тестовая станция",
+    stationDistanceKm: 31.6,
+  },
+  {
+    pointId: "one",
+    extremeAt: new Date("2026-07-11T14:00:00Z"),
+    type: "low",
+    heightM: -1.1,
+    source: "Stormglass",
+    stationName: "Тестовая станция",
+    stationDistanceKm: 31.6,
+  },
+];
 
 describe("renderBulletin", () => {
   it("renders local Moscow time as channel-neutral plain text", () => {
@@ -161,6 +182,26 @@ describe("renderBulletin", () => {
     expect(result).toContain("Точка <1>\nВетер: 3–7 м/с · порывы до 10 м/с.\nДинамика: сравнение неполное.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: нет данных.\nПоворот: сравнение неполное.\nECMWF: З → СЗ с 12:00 до 15:00 МСК.\nGFS: нет данных.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.");
     expect(result).not.toContain("\nВолна и вода\n");
     expect(result).toContain("Выпуск\nИзменение: нет предыдущего планового выпуска для сравнения.\nПрогноз морской модели: в губах, за островами и у берега условия могут отличаться.");
+  });
+
+  it("adds a point-specific tide phase and flags a distant station as approximate", () => {
+    const result = renderBulletin({
+      summary,
+      warnings: [],
+      tides,
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [marine],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain(
+      "Прилив: вода прибывает; полная вода 11 июля в 11:00 МСК, малая вода 11 июля в 17:00 МСК Ориентировочно: станция Тестовая станция, 31,6 км.",
+    );
+    expect(result).not.toContain("Обстановка\nПрилив:");
   });
 
   it("adds agreed wind direction and significant turn to a control point", () => {

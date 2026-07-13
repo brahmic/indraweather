@@ -322,35 +322,48 @@ export class Database {
     for (const item of extremes) {
       await this.pool.query(`
         INSERT INTO tide_extremes
-          (extreme_at, type, height_m, source, station_name)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (source, extreme_at, type) DO UPDATE SET
+          (point_id, extreme_at, type, height_m, source, station_name, station_distance_km)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (point_id, source, extreme_at, type) DO UPDATE SET
           height_m = EXCLUDED.height_m,
           station_name = EXCLUDED.station_name,
+          station_distance_km = EXCLUDED.station_distance_km,
           received_at = now()
-      `, [item.extremeAt, item.type, item.heightM, item.source, item.stationName]);
+      `, [
+        item.pointId,
+        item.extremeAt,
+        item.type,
+        item.heightM,
+        item.source,
+        item.stationName,
+        item.stationDistanceKm,
+      ]);
     }
   }
 
-  async getTideExtremes(start: Date, end: Date): Promise<TideExtreme[]> {
+  async getTideExtremes(pointId: string, start: Date, end: Date): Promise<TideExtreme[]> {
     const result = await this.pool.query<{
+      point_id: string;
       extreme_at: Date;
       type: "high" | "low";
       height_m: number | null;
       source: string;
       station_name: string | null;
+      station_distance_km: number | null;
     }>(`
-      SELECT extreme_at, type, height_m, source, station_name
+      SELECT point_id, extreme_at, type, height_m, source, station_name, station_distance_km
       FROM tide_extremes
-      WHERE extreme_at BETWEEN $1 AND $2
+      WHERE point_id = $1 AND extreme_at BETWEEN $2 AND $3
       ORDER BY extreme_at
-    `, [start, end]);
+    `, [pointId, start, end]);
     return result.rows.map((row) => ({
+      pointId: row.point_id,
       extremeAt: row.extreme_at,
       type: row.type,
       heightM: row.height_m,
       source: row.source,
       stationName: row.station_name,
+      stationDistanceKm: row.station_distance_km,
     }));
   }
 

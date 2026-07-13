@@ -28,11 +28,13 @@ export interface ForecastValue {
 }
 
 export interface TideExtreme {
+  pointId: string;
   extremeAt: Date;
   type: "high" | "low";
   heightM: number | null;
   source: string;
   stationName: string | null;
+  stationDistanceKm: number | null;
 }
 
 export interface OfficialWarning {

@@ -91,7 +91,7 @@ export class BulletinService {
       await this.database.saveForecastValues(run.id, values);
 
       const warningResult = await this.loadWarnings(errors);
-      const tideValues = await this.loadTides(startedAt, errors);
+      const tideValues = await this.loadTides(activePoints, startedAt, errors);
       const marineResult = await this.loadMarine(activePoints, startedAt, run.id, errors);
       const previousSummary = options.kind === "scheduled"
         ? await this.database.getPreviousScheduledSummary()
@@ -165,21 +165,30 @@ export class BulletinService {
     }
   }
 
-  private async loadTides(now: Date, errors: string[]) {
+  private async loadTides(points: ControlPoint[], now: Date, errors: string[]) {
     const end = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-    let cached = await this.database.getTideExtremes(now, end);
-    const coversNextDay = cached.some((item) => item.extremeAt.getTime() > now.getTime() + 24 * 60 * 60 * 1000);
-    if (coversNextDay || !this.tides) return cached;
-    try {
-      const fetched = await this.tides.getExtremes(now, new Date(now.getTime() + 72 * 60 * 60 * 1000));
-      await this.database.saveTideExtremes(fetched);
-      cached = await this.database.getTideExtremes(now, end);
-    } catch (error) {
-      const message = `Tides: ${errorMessage(error)}`;
-      errors.push(message);
-      this.logger.warn({ error: message }, "Tide request failed");
+    const cachedByPoint = new Map(await Promise.all(points.map(async (point) => [
+      point.id,
+      await this.database.getTideExtremes(point.id, now, end),
+    ] as const)));
+    const stalePoints = points.filter((point) => !coversNextTideDay(cachedByPoint.get(point.id) ?? [], now));
+    const tides = this.tides;
+    if (stalePoints.length === 0 || !tides) return [...cachedByPoint.values()].flat();
+
+    const fetchEnd = new Date(now.getTime() + 72 * 60 * 60 * 1000);
+    const fetched = await Promise.allSettled(stalePoints.map((point) => tides.getExtremes(point, now, fetchEnd)));
+    for (const [index, result] of fetched.entries()) {
+      const point = stalePoints[index];
+      if (!point) continue;
+      if (result.status === "fulfilled") {
+        await this.database.saveTideExtremes(result.value);
+      } else {
+        const message = `Tides/${point.id}: ${errorMessage(result.reason)}`;
+        errors.push(message);
+        this.logger.warn({ error: message }, "Tide request failed");
+      }
     }
-    return cached;
+    return (await Promise.all(points.map((point) => this.database.getTideExtremes(point.id, now, end)))).flat();
   }
 
   private async loadMarine(
@@ -215,4 +224,8 @@ export class BulletinService {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function coversNextTideDay(tides: Array<{ extremeAt: Date }>, now: Date): boolean {
+  return tides.some((item) => item.extremeAt.getTime() > now.getTime() + 24 * 60 * 60 * 1000);
 }

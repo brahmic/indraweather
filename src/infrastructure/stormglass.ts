@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { TideExtreme } from "../domain/types.js";
+import type { ControlPoint, TideExtreme } from "../domain/types.js";
 import { fetchJson } from "./http.js";
 
 const responseSchema = z.object({
@@ -9,7 +9,10 @@ const responseSchema = z.object({
     type: z.enum(["high", "low"]),
   })),
   meta: z.object({
-    station: z.object({ name: z.string().optional() }).optional(),
+    station: z.object({
+      name: z.string().optional(),
+      distance: z.number().nonnegative().nullable().optional(),
+    }).optional(),
   }).passthrough(),
 });
 
@@ -20,10 +23,10 @@ export class StormglassClient {
     private readonly retries: number,
   ) {}
 
-  async getExtremes(start: Date, end: Date): Promise<TideExtreme[]> {
+  async getExtremes(point: ControlPoint, start: Date, end: Date): Promise<TideExtreme[]> {
     const url = new URL("https://api.stormglass.io/v2/tide/extremes/point");
-    url.searchParams.set("lat", "67.133");
-    url.searchParams.set("lng", "32.425");
+    url.searchParams.set("lat", String(point.latitude));
+    url.searchParams.set("lng", String(point.longitude));
     url.searchParams.set("start", start.toISOString());
     url.searchParams.set("end", end.toISOString());
     url.searchParams.set("datum", "MSL");
@@ -34,11 +37,13 @@ export class StormglassClient {
     });
     const response = responseSchema.parse(raw);
     return response.data.map((item) => ({
+      pointId: point.id,
       extremeAt: new Date(item.time),
       type: item.type,
       heightM: item.height ?? null,
       source: "Stormglass",
-      stationName: response.meta.station?.name ?? "Кандалакша",
+      stationName: response.meta.station?.name ?? null,
+      stationDistanceKm: response.meta.station?.distance ?? null,
     }));
   }
 }

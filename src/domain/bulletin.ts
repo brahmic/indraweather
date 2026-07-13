@@ -17,6 +17,8 @@ const AGREEMENT_LABELS: Record<string, string> = {
   "расходятся по времени изменения": "время изменения ветра",
 };
 
+const TIDE_APPROXIMATE_STATION_DISTANCE_KM = 25;
+
 export interface BulletinInput {
   summary: BulletinSummary;
   warnings: OfficialWarning[];
@@ -34,6 +36,12 @@ export interface BulletinInput {
 export function renderBulletin(input: BulletinInput): string {
   const generatedAt = new Date(input.summary.generatedAt);
   const marineByPointId = new Map(input.marine.map((marine) => [marine.point.id, marine]));
+  const tidesByPointId = new Map<string, TideExtreme[]>();
+  for (const tide of input.tides) {
+    const values = tidesByPointId.get(tide.pointId) ?? [];
+    values.push(tide);
+    tidesByPointId.set(tide.pointId, values);
+  }
   const lines: string[] = [
     "Кемь — Кандалакша · гидрометеосводка",
     `Сформировано: ${formatDateTime(generatedAt, input.timeZone)} · прогноз на ${input.summary.horizonHours} часа`,
@@ -98,6 +106,8 @@ export function renderBulletin(input: BulletinInput): string {
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
     const marine = marineByPointId.get(point.point.id);
     lines.push(marine ? `Море: ${renderMarine(marine)}.` : "Море: нет данных.");
+    const tide = renderTide(tidesByPointId.get(point.point.id) ?? [], generatedAt, input.timeZone);
+    if (tide) lines.push(`Прилив: ${tide}.`);
   }
 
   lines.push(
@@ -105,7 +115,6 @@ export function renderBulletin(input: BulletinInput): string {
     "Обстановка",
     `Давление: ${renderPressure(input.summary)}.`,
     `Период 24–48 часов: ${renderOutlook(input.summary)}.`,
-    `Прилив: ${renderTide(input.tides, generatedAt, input.timeZone)}`,
     "",
     "Выпуск",
     `Изменение: ${renderPreviousDifference(input.summary, input.previousSummary)}.`,
@@ -388,16 +397,19 @@ function renderPressure(summary: BulletinSummary): string {
   return `${strongest.point}, ${modelLabel(strongest.model)}: ${strongest.value > 0 ? "рост" : "снижение"} на ${formatNumber(Math.abs(strongest.value))} гПа за 24 часа`;
 }
 
-function renderTide(tides: TideExtreme[], now: Date, timeZone: string): string {
+function renderTide(tides: TideExtreme[], now: Date, timeZone: string): string | null {
   const sorted = [...tides].sort((left, right) => left.extremeAt.getTime() - right.extremeAt.getTime());
   const future = sorted.filter((item) => item.extremeAt > now);
   const high = future.find((item) => item.type === "high");
   const low = future.find((item) => item.type === "low");
   const next = future[0];
-  if (!high || !low || !next) return "данные временно недоступны.";
-  const phase = next.type === "high" ? "прилив" : "отлив";
-  const minutes = Math.max(0, Math.round((next.extremeAt.getTime() - now.getTime()) / 60_000));
-  return `полная вода ${formatDateTime(high.extremeAt, timeZone)}, малая вода ${formatDateTime(low.extremeAt, timeZone)}; сейчас ${phase}, смена примерно через ${formatDuration(minutes)}.`;
+  if (!high || !low || !next) return null;
+  const phase = next.type === "high" ? "вода прибывает" : "вода убывает";
+  const station = next.stationName && next.stationDistanceKm !== null
+    && next.stationDistanceKm > TIDE_APPROXIMATE_STATION_DISTANCE_KM
+    ? ` Ориентировочно: станция ${next.stationName}, ${formatNumber(next.stationDistanceKm)} км`
+    : "";
+  return `${phase}; полная вода ${formatDateTime(high.extremeAt, timeZone)}, малая вода ${formatDateTime(low.extremeAt, timeZone)}${station}`;
 }
 
 function renderPreviousDifference(

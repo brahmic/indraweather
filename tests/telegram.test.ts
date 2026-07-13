@@ -329,10 +329,11 @@ describe("TelegramChannel /forecast", () => {
     expect(calls[1]?.body.reply_markup).toEqual(expect.objectContaining({
       inline_keyboard: [[
         expect.objectContaining({ callback_data: "forecast-action:clouds" }),
+        expect.objectContaining({ callback_data: "forecast-action:radar" }),
+      ], [
         expect.objectContaining({ callback_data: "forecast-action:animation" }),
       ], [
         expect.objectContaining({ callback_data: "forecast-action:lightning" }),
-        expect.objectContaining({ callback_data: "forecast-action:radar" }),
       ]],
     }));
     expect(calls[1]?.body.caption).toBe("forecast.png");

@@ -478,11 +478,17 @@ export class TelegramChannel implements DeliveryChannel {
   }
 
   private async sendRadar(chatId: number): Promise<void> {
-    await this.sendDiagnostic(
-      chatId,
-      async () => [await this.publications.getRadar(await this.getMapViewport(String(chatId)))],
-      "Радар Sentinel-1 временно недоступен или ещё не настроен.",
-    );
+    const progress = await this.bot.api.sendMessage(chatId, "⏳ Запрашиваю радар Sentinel-1…");
+    try {
+      await this.sendDiagnostic(
+        chatId,
+        async () => [await this.publications.getRadar(await this.getMapViewport(String(chatId)))],
+        "Радар Sentinel-1 временно недоступен или ещё не настроен.",
+      );
+    } finally {
+      await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove radar progress message"));
+    }
   }
 
   private async sendPoints(chatId: number): Promise<void> {
@@ -570,10 +576,11 @@ export class TelegramChannel implements DeliveryChannel {
   private forecastDiagnosticKeyboard(): InlineKeyboard {
     return new InlineKeyboard()
       .text("☁️ Облачность", "forecast-action:clouds")
+      .text("📡 Радар", "forecast-action:radar")
+      .row()
       .text("▶️ Движение облаков", "forecast-action:animation")
       .row()
-      .text("⚡ Грозовая активность", "forecast-action:lightning")
-      .text("📡 Радар", "forecast-action:radar");
+      .text("⚡ Грозовая активность", "forecast-action:lightning");
   }
 
   private bulletinKeyboard(): InlineKeyboard {

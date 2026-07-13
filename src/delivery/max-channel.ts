@@ -372,12 +372,18 @@ export class MaxChannel implements DeliveryChannel {
   }
 
   private async sendRadar(userId: number): Promise<void> {
-    const map = await this.getMapSelection(userId);
-    await this.sendDiagnostic(
-      userId,
-      async () => [await this.publications.getRadar(map.viewport)],
-      "Радар Sentinel-1 временно недоступен или ещё не настроен.",
-    );
+    const progressId = await this.api.sendMessage(userId, "⏳ Запрашиваю радар Sentinel-1…");
+    try {
+      const map = await this.getMapSelection(userId);
+      await this.sendDiagnostic(
+        userId,
+        async () => [await this.publications.getRadar(map.viewport)],
+        "Радар Sentinel-1 временно недоступен или ещё не настроен.",
+      );
+    } finally {
+      await this.api.deleteMessage(progressId).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove MAX radar progress message"));
+    }
   }
 
   private async sendDetails(userId: number): Promise<void> {
@@ -686,10 +692,11 @@ export class MaxChannel implements DeliveryChannel {
       payload: {
         buttons: [[
           { type: "callback", text: "☁️ Облачность", payload: "forecast-action:clouds" },
+          { type: "callback", text: "📡 Радар", payload: "forecast-action:radar" },
+        ], [
           { type: "callback", text: "▶️ Движение облаков", payload: "forecast-action:animation" },
         ], [
           { type: "callback", text: "⚡ Грозовая активность", payload: "forecast-action:lightning" },
-          { type: "callback", text: "📡 Радар", payload: "forecast-action:radar" },
         ]],
       },
     };

@@ -289,10 +289,11 @@ describe("MaxChannel", () => {
         payload: {
           buttons: [[
             expect.objectContaining({ payload: "forecast-action:clouds" }),
+            expect.objectContaining({ payload: "forecast-action:radar" }),
+          ], [
             expect.objectContaining({ payload: "forecast-action:animation" }),
           ], [
             expect.objectContaining({ payload: "forecast-action:lightning" }),
-            expect.objectContaining({ payload: "forecast-action:radar" }),
           ]],
         },
       }),
@@ -358,6 +359,8 @@ describe("MaxChannel", () => {
     expect(publications.getRadar).toHaveBeenCalledWith(expect.objectContaining({
       bbox: [30, 64, 36, 68],
     }));
+    expect(api.sendMessage).toHaveBeenCalledWith(42, "⏳ Запрашиваю радар Sentinel-1…");
+    expect(api.deleteMessage).toHaveBeenCalledOnce();
     expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "map.png");
     await channel.stop();
   });

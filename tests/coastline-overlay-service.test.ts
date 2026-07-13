@@ -23,10 +23,12 @@ describe("CoastlineOverlayService", () => {
     const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
     const center = (40 * info.width + 50) * info.channels;
     const kemiMarker = (60 * info.width + 79) * info.channels;
+    const umbaMarker = (26 * info.width + 72) * info.channels;
 
     expect(info.width).toBe(100);
     expect(info.height).toBe(80);
     expect([...data.subarray(center, center + 3)]).not.toEqual([138, 160, 170]);
     expect([...data.subarray(kemiMarker, kemiMarker + 3)]).not.toEqual([138, 160, 170]);
+    expect([...data.subarray(umbaMarker, umbaMarker + 3)]).not.toEqual([138, 160, 170]);
   });
 });

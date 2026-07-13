@@ -137,6 +137,7 @@ const SETTLEMENTS = [
   { name: "Чупа", latitude: 66.285, longitude: 33.255 },
   { name: "Ковда", latitude: 66.693, longitude: 32.87 },
   { name: "Кандалакша", latitude: 67.133, longitude: 32.425 },
+  { name: "Умба", latitude: 66.679, longitude: 34.31 },
 ] as const;
 
 function round(value: number): number {

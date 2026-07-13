@@ -31,6 +31,10 @@ export class SatelliteImageService {
     return this.getLatestForLayer(this.client.nightLayer, now, false);
   }
 
+  async getLatestInfraredSnapshot(now = new Date(), viewport?: MapViewport): Promise<ImageAttachment> {
+    return this.getLatestForLayer(this.client.nightLayer, now, true, viewport);
+  }
+
   async getInfraredFrameAt(
     observedAt: Date,
     viewport: MapViewport,

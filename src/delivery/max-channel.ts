@@ -17,6 +17,7 @@ import type { MaxApiClient, MaxMessageAttachment } from "../infrastructure/max-a
 import type { Logger } from "../logger.js";
 import { formatPostHtml, splitText } from "./post-format.js";
 import { formatHelpHtml } from "./help-text.js";
+import { formatPersonalCloudMotionStatus } from "./cloud-motion.js";
 import type { DeliveryAttachment, DeliveryChannel, Publication } from "./types.js";
 
 const userSchema = z.object({
@@ -259,7 +260,7 @@ export class MaxChannel implements DeliveryChannel {
         await this.sendDetails(sender.user_id);
         break;
       case "animation":
-        await this.sendSatelliteAnimation(sender.user_id);
+        await this.sendCloudMotion(sender.user_id);
         break;
       case "forecast":
         await this.sendPointForecastPicker(sender.user_id);
@@ -335,12 +336,11 @@ export class MaxChannel implements DeliveryChannel {
     const progressId = await this.api.sendMessage(userId, "⏳ Собираю информацию об облачности…");
     try {
       const map = await this.getMapSelection(userId);
-      const sent = await this.sendDiagnostic(
+      await this.sendDiagnostic(
         userId,
-        () => this.publications.getClouds(map.viewport, !map.isCustom),
+        () => this.publications.getClouds(map.viewport),
         "Диагностический снимок облаков временно недоступен.",
       );
-      if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", userId, map.viewport);
     } catch (error) {
       this.logger.error({ error }, "MAX cloud diagnostic request failed");
       await this.api.sendMessage(userId, "Диагностический снимок облаков временно недоступен.");
@@ -367,28 +367,28 @@ export class MaxChannel implements DeliveryChannel {
     }
   }
 
-  private async sendSatelliteAnimation(userId: number): Promise<void> {
+  private async sendCloudMotion(userId: number): Promise<void> {
     const progressId = await this.api.sendMessage(userId, "⏳ Готовлю анимацию движения облаков…");
     try {
       const map = await this.getMapSelection(userId);
       if (map.isCustom) {
-        const result = await this.requestPersonalAnimation("satellite", userId, map.viewport);
-        const text = result === "queued"
-          ? "⏳ Собираю анимацию для вашего охвата. Ролик придёт отдельным сообщением."
-          : result === "cached"
-          ? "⏳ Отправляю готовую анимацию для вашего охвата."
-          : "Анимация пока недоступна: недостаточно кадров или персональная обработка выключена.";
-        await this.api.editMessage(progressId, text);
+        const results = await Promise.all([
+          this.requestPersonalAnimation("satellite", userId, map.viewport),
+          this.requestPersonalAnimation("clouds", userId, map.viewport),
+        ]);
+        await this.api.editMessage(progressId, formatPersonalCloudMotionStatus(results));
         return;
       }
-      await this.sendAttachment(userId, await this.publications.getSatelliteAnimation());
+      for (const attachment of await this.publications.getCloudMotionAnimations()) {
+        await this.sendAttachment(userId, attachment);
+      }
       await this.api.deleteMessage(progressId).catch((error: unknown) =>
-        this.logger.debug({ error }, "Failed to remove MAX satellite animation progress message"));
+        this.logger.debug({ error }, "Failed to remove MAX cloud motion progress message"));
     } catch (error) {
-      this.logger.error({ error }, "MAX satellite animation request failed");
+      this.logger.error({ error }, "MAX cloud motion request failed");
       await this.api.editMessage(
         progressId,
-        "Анимация пока недоступна: недостаточно кадров или источник временно не отвечает.",
+        "Анимации пока недоступны: недостаточно кадров или источник временно не отвечает.",
       ).catch(() => undefined);
     }
   }
@@ -464,7 +464,7 @@ export class MaxChannel implements DeliveryChannel {
       : "⏳ Собираю информацию об облачности…";
     await this.api.answerCallback(callbackId, { text: title, attachments: [] });
     if (action === "details") await this.sendDetails(userId);
-    else if (action === "animation") await this.sendSatelliteAnimation(userId);
+    else if (action === "animation") await this.sendCloudMotion(userId);
     else await this.sendClouds(userId);
   }
 
@@ -569,14 +569,6 @@ export class MaxChannel implements DeliveryChannel {
     };
   }
 
-  private enqueuePersonalAnimation(
-    kind: "satellite" | "clouds",
-    userId: number,
-    viewport: MapViewport,
-  ): void {
-    void this.requestPersonalAnimation(kind, userId, viewport);
-  }
-
   private async requestPersonalAnimation(
     kind: "satellite" | "clouds",
     userId: number,
@@ -640,7 +632,7 @@ export class MaxChannel implements DeliveryChannel {
       payload: {
         buttons: [[
           { type: "callback", text: "🔬 Детали", payload: "bulletin:details" },
-          { type: "callback", text: "☁️ Облака", payload: "bulletin:clouds" },
+          { type: "callback", text: "☁️ Облачность", payload: "bulletin:clouds" },
         ], [
           { type: "callback", text: "🗓️ Прогноз 5 дней", payload: "bulletin:forecast" },
         ], [

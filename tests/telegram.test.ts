@@ -145,7 +145,7 @@ describe("TelegramChannel /weather", () => {
     expect(calls[1]?.body.reply_markup).toEqual(expect.objectContaining({
       inline_keyboard: [[
         expect.objectContaining({ callback_data: "bulletin:details" }),
-        expect.objectContaining({ callback_data: "bulletin:clouds" }),
+        expect.objectContaining({ text: "☁️ Облачность", callback_data: "bulletin:clouds" }),
       ], [expect.objectContaining({ callback_data: "bulletin:forecast" })], [
         expect.objectContaining({ callback_data: "bulletin:animation" }),
       ]],
@@ -308,6 +308,14 @@ describe("TelegramChannel /clouds", () => {
         caption: "Облака",
         source: "EUMETSAT",
         observedAt: new Date(),
+      }, {
+        kind: "image" as const,
+        data: new Uint8Array([4, 5, 6]),
+        contentType: "image/png" as const,
+        filename: "infrared.png",
+        caption: "ИК",
+        source: "EUMETSAT",
+        observedAt: new Date(),
       }]),
     };
     const channel = new TelegramChannel(
@@ -334,11 +342,11 @@ describe("TelegramChannel /clouds", () => {
 
     await channel.bot.handleUpdate(commandUpdate("/clouds", 10));
 
-    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendPhoto", "deleteMessage"]);
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendPhoto", "sendPhoto", "deleteMessage"]);
     expect(calls[0]?.body.text).toContain("Собираю информацию об облачности");
     expect(publications.getClouds).toHaveBeenCalledWith(expect.objectContaining({
       bbox: [30, 64, 36, 68],
-    }), true);
+    }));
   });
 });
 
@@ -520,7 +528,7 @@ describe("TelegramChannel /map", () => {
 });
 
 describe("TelegramChannel personal animation", () => {
-  it("queues a custom animation only after /animation", async () => {
+  it("queues both custom cloud animations only after /animation", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
     const publications = {};
     const personalAnimations = { request: vi.fn(async () => "queued") };
@@ -551,12 +559,20 @@ describe("TelegramChannel personal animation", () => {
     channel.bot.botInfo = testBotInfo();
 
     await channel.bot.handleUpdate(commandUpdate("/animation", 5));
-    await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledTimes(2));
 
-    expect(personalAnimations.request).toHaveBeenCalledWith(
+    expect(personalAnimations.request).toHaveBeenNthCalledWith(
+      1,
       "telegram",
       "123",
       "satellite",
+      expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
+    );
+    expect(personalAnimations.request).toHaveBeenNthCalledWith(
+      2,
+      "telegram",
+      "123",
+      "clouds",
       expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
     );
     expect(calls.map((call) => call.method)).toEqual(["sendMessage", "editMessageText"]);
@@ -564,20 +580,30 @@ describe("TelegramChannel personal animation", () => {
 });
 
 describe("TelegramChannel /animation", () => {
-  it("sends the ready standard animation only after an explicit request", async () => {
+  it("sends both ready cloud-motion animations only after an explicit request", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
     const publications = {
-      getSatelliteAnimation: vi.fn(async () => ({
+      getCloudMotionAnimations: vi.fn(async () => [{
         kind: "animation" as const,
         data: new Uint8Array([1, 2, 3]),
         contentType: "video/mp4" as const,
-        filename: "movement.mp4",
-        caption: "Движение облаков",
+        filename: "infrared.mp4",
+        caption: "ИК-движение облаков",
         source: "EUMETSAT",
         startedAt: new Date(),
         endedAt: new Date(),
         frameCount: 3,
-      })),
+      }, {
+        kind: "animation" as const,
+        data: new Uint8Array([4, 5, 6]),
+        contentType: "video/mp4" as const,
+        filename: "diagnostic.mp4",
+        caption: "Диагностика облаков",
+        source: "EUMETSAT",
+        startedAt: new Date(),
+        endedAt: new Date(),
+        frameCount: 3,
+      }]),
     };
     const channel = new TelegramChannel(
       "123:test",
@@ -603,8 +629,8 @@ describe("TelegramChannel /animation", () => {
 
     await channel.bot.handleUpdate(commandUpdate("/animation", 14));
 
-    expect(publications.getSatelliteAnimation).toHaveBeenCalledOnce();
-    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendVideo", "deleteMessage"]);
+    expect(publications.getCloudMotionAnimations).toHaveBeenCalledOnce();
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendVideo", "sendVideo", "deleteMessage"]);
   });
 });
 

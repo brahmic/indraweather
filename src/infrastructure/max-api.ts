@@ -62,7 +62,7 @@ export class MaxApiClient {
         { name: "forecast", description: "Прогноз на 5 дней" },
         { name: "points", description: "Контрольные точки" },
         { name: "status", description: "Статус обновления" },
-        { name: "clouds", description: "Диагностика облаков" },
+        { name: "clouds", description: "Облачность и ИК-снимок" },
         { name: "radar", description: "Радар Sentinel-1" },
         { name: "map", description: "Настроить охват карты" },
       ],

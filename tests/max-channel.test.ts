@@ -153,7 +153,7 @@ describe("MaxChannel", () => {
         payload: {
           buttons: [[
             expect.objectContaining({ payload: "bulletin:details" }),
-            expect.objectContaining({ payload: "bulletin:clouds" }),
+            expect.objectContaining({ text: "☁️ Облачность", payload: "bulletin:clouds" }),
           ], [expect.objectContaining({ payload: "bulletin:forecast" })], [
             expect.objectContaining({ payload: "bulletin:animation" }),
           ]],
@@ -422,7 +422,7 @@ describe("MaxChannel", () => {
     expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Собираю информацию об облачности"));
     expect(publications.getClouds).toHaveBeenCalledWith(expect.objectContaining({
       bbox: [30, 64, 36, 68],
-    }), true);
+    }));
     expect(api.deleteMessage).toHaveBeenCalledWith("message-1");
     await channel.stop();
   });
@@ -595,7 +595,7 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
-  it("queues a custom animation after MAX /animation", async () => {
+  it("queues both custom cloud animations after MAX /animation", async () => {
     const database = databaseStub();
     database.getMapViewport.mockResolvedValue([30.5, 64, 36.5, 68]);
     database.claimMaxWebhook
@@ -621,18 +621,26 @@ describe("MaxChannel", () => {
     );
 
     await channel.start();
-    await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(personalAnimations.request).toHaveBeenCalledTimes(2));
 
-    expect(personalAnimations.request).toHaveBeenCalledWith(
+    expect(personalAnimations.request).toHaveBeenNthCalledWith(
+      1,
       "max",
       "42",
       "satellite",
       expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
     );
+    expect(personalAnimations.request).toHaveBeenNthCalledWith(
+      2,
+      "max",
+      "42",
+      "clouds",
+      expect.objectContaining({ bbox: [30.5, 64, 36.5, 68] }),
+    );
     await channel.stop();
   });
 
-  it("sends the ready standard animation only after MAX /animation", async () => {
+  it("sends both ready cloud-motion animations only after MAX /animation", async () => {
     const database = databaseStub();
     database.claimMaxWebhook
       .mockResolvedValueOnce({
@@ -643,17 +651,27 @@ describe("MaxChannel", () => {
       .mockResolvedValueOnce(null);
     const api = apiStub();
     const publications = {
-      getSatelliteAnimation: vi.fn(async () => ({
+      getCloudMotionAnimations: vi.fn(async () => [{
         kind: "animation" as const,
         data: new Uint8Array([1, 2, 3]),
         contentType: "video/mp4" as const,
-        filename: "movement.mp4",
-        caption: "Движение облаков",
+        filename: "infrared.mp4",
+        caption: "ИК-движение облаков",
         source: "EUMETSAT",
         startedAt: new Date(),
         endedAt: new Date(),
         frameCount: 3,
-      })),
+      }, {
+        kind: "animation" as const,
+        data: new Uint8Array([4, 5, 6]),
+        contentType: "video/mp4" as const,
+        filename: "diagnostic.mp4",
+        caption: "Диагностика облаков",
+        source: "EUMETSAT",
+        startedAt: new Date(),
+        endedAt: new Date(),
+        frameCount: 3,
+      }]),
     };
     const channel = new MaxChannel(
       "token",
@@ -669,8 +687,9 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-animation"));
 
-    expect(publications.getSatelliteAnimation).toHaveBeenCalledOnce();
-    expect(api.uploadVideo).toHaveBeenCalledWith(expect.any(Uint8Array), "movement.mp4");
+    expect(publications.getCloudMotionAnimations).toHaveBeenCalledOnce();
+    expect(api.uploadVideo).toHaveBeenNthCalledWith(1, expect.any(Uint8Array), "infrared.mp4");
+    expect(api.uploadVideo).toHaveBeenNthCalledWith(2, expect.any(Uint8Array), "diagnostic.mp4");
     expect(api.deleteMessage).toHaveBeenCalledOnce();
     await channel.stop();
   });

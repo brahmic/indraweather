@@ -41,6 +41,18 @@ describe("SatelliteImageService", () => {
     expect(client.getLatestMetadata).toHaveBeenCalledWith(nightLayer);
   });
 
+  it("returns a current infrared snapshot even during daylight", async () => {
+    const observedAt = new Date("2026-07-11T09:50:00Z");
+    const client = stubClient(observedAt);
+    const service = createService(client);
+
+    const image = await service.getLatestInfraredSnapshot(new Date("2026-07-11T10:00:00Z"));
+
+    expect(image.filename).toContain("night");
+    expect(image.caption).toContain("инфракрасный канал");
+    expect(client.getLatestMetadata).toHaveBeenCalledWith(nightLayer);
+  });
+
   it("rejects stale imagery", async () => {
     const client = stubClient(new Date("2026-07-11T05:00:00Z"));
     const service = createService(client);

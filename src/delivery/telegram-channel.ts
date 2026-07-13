@@ -16,6 +16,7 @@ import type { Database } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
 import { formatPostHtml, splitText } from "./post-format.js";
 import { formatHelpHtml } from "./help-text.js";
+import { formatPersonalCloudMotionStatus } from "./cloud-motion.js";
 
 export class TelegramChannel implements DeliveryChannel {
   readonly id = "telegram";
@@ -45,7 +46,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "forecast", description: "Прогноз на 5 дней" },
       { command: "points", description: "Контрольные точки" },
       { command: "status", description: "Статус обновления" },
-      { command: "clouds", description: "Диагностика облаков" },
+      { command: "clouds", description: "Облачность и ИК-снимок" },
       { command: "radar", description: "Радар Sentinel-1" },
       { command: "map", description: "Настроить охват карты" },
     ]);
@@ -111,7 +112,7 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("animation", async (ctx) => {
-      await this.sendSatelliteAnimation(ctx.chat.id);
+      await this.sendCloudMotion(ctx.chat.id);
     });
 
     this.bot.command("forecast", async (ctx) => {
@@ -221,7 +222,7 @@ export class TelegramChannel implements DeliveryChannel {
       await ctx.answerCallbackQuery();
       if (action === "details") await this.sendDetails(ctx.chat.id);
       else if (action === "clouds") await this.sendClouds(ctx.chat.id);
-      else if (action === "animation") await this.sendSatelliteAnimation(ctx.chat.id);
+      else if (action === "animation") await this.sendCloudMotion(ctx.chat.id);
       else await this.sendPointForecastPicker(ctx.chat.id);
     });
 
@@ -372,29 +373,33 @@ export class TelegramChannel implements DeliveryChannel {
     });
   }
 
-  private async sendSatelliteAnimation(chatId: number): Promise<void> {
+  private async sendCloudMotion(chatId: number): Promise<void> {
     const progress = await this.bot.api.sendMessage(chatId, "⏳ Готовлю анимацию движения облаков…");
     try {
       const map = await this.getMapSelection(String(chatId));
       if (map.isCustom) {
-        const result = await this.requestPersonalAnimation("satellite", String(chatId), map.viewport);
-        const text = result === "queued"
-          ? "⏳ Собираю анимацию для вашего охвата. Ролик придёт отдельным сообщением."
-          : result === "cached"
-          ? "⏳ Отправляю готовую анимацию для вашего охвата."
-          : "Анимация пока недоступна: недостаточно кадров или персональная обработка выключена.";
-        await this.bot.api.editMessageText(chatId, progress.message_id, text);
+        const results = await Promise.all([
+          this.requestPersonalAnimation("satellite", String(chatId), map.viewport),
+          this.requestPersonalAnimation("clouds", String(chatId), map.viewport),
+        ]);
+        await this.bot.api.editMessageText(
+          chatId,
+          progress.message_id,
+          formatPersonalCloudMotionStatus(results),
+        );
         return;
       }
-      await this.sendAttachment(chatId, await this.publications.getSatelliteAnimation());
+      for (const attachment of await this.publications.getCloudMotionAnimations()) {
+        await this.sendAttachment(chatId, attachment);
+      }
       await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
-        this.logger.debug({ error }, "Failed to remove satellite animation progress message"));
+        this.logger.debug({ error }, "Failed to remove cloud motion progress message"));
     } catch (error) {
-      this.logger.error({ error }, "Satellite animation request failed");
+      this.logger.error({ error }, "Cloud motion request failed");
       await this.bot.api.editMessageText(
         chatId,
         progress.message_id,
-        "Анимация пока недоступна: недостаточно кадров или источник временно не отвечает.",
+        "Анимации пока недоступны: недостаточно кадров или источник временно не отвечает.",
       ).catch(() => undefined);
     }
   }
@@ -403,12 +408,11 @@ export class TelegramChannel implements DeliveryChannel {
     const progress = await this.bot.api.sendMessage(chatId, "⏳ Собираю информацию об облачности…");
     try {
       const map = await this.getMapSelection(String(chatId));
-      const sent = await this.sendDiagnostic(
+      await this.sendDiagnostic(
         chatId,
-        async () => this.publications.getClouds(map.viewport, !map.isCustom),
+        async () => this.publications.getClouds(map.viewport),
         "Диагностический снимок облаков временно недоступен.",
       );
-      if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", String(chatId), map.viewport);
     } catch (error) {
       this.logger.error({ error }, "Cloud diagnostic request failed");
       await this.bot.api.sendMessage(chatId, "Диагностический снимок облаков временно недоступен.");
@@ -457,14 +461,6 @@ export class TelegramChannel implements DeliveryChannel {
     };
   }
 
-  private enqueuePersonalAnimation(
-    kind: "satellite" | "clouds",
-    recipientId: string,
-    viewport: MapViewport,
-  ): void {
-    void this.requestPersonalAnimation(kind, recipientId, viewport);
-  }
-
   private async requestPersonalAnimation(
     kind: "satellite" | "clouds",
     recipientId: string,
@@ -511,7 +507,7 @@ export class TelegramChannel implements DeliveryChannel {
   private bulletinKeyboard(): InlineKeyboard {
     return new InlineKeyboard()
       .text("🔬 Детали", "bulletin:details")
-      .text("☁️ Облака", "bulletin:clouds")
+      .text("☁️ Облачность", "bulletin:clouds")
       .row()
       .text("🗓️ Прогноз 5 дней", "bulletin:forecast")
       .row()

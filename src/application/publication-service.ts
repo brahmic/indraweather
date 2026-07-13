@@ -72,18 +72,35 @@ export class PublicationService {
     return animation;
   }
 
-  async getClouds(viewport?: MapViewport, includeAnimation = true): Promise<DeliveryAttachment[]> {
+  async getClouds(viewport?: MapViewport): Promise<DeliveryAttachment[]> {
     if (!this.clouds) throw new Error("Cloud diagnostics are disabled");
-    const attachments: DeliveryAttachment[] = [await this.clouds.getLatest(new Date(), viewport)];
-    if (includeAnimation && this.cloudAnimation) {
-      try {
-        const animation = await this.cloudAnimation.getLatest();
-        if (animation) attachments.push(animation);
-      } catch (error) {
-        this.logger.warn({ error }, "Cloud diagnostic animation is unavailable");
-      }
+    const diagnostic = this.clouds.getLatest(new Date(), viewport);
+    const infrared = this.satellite?.getLatestInfraredSnapshot(new Date(), viewport)
+      .catch((error: unknown) => {
+        this.logger.warn({ error }, "Infrared cloud image is unavailable");
+        return null;
+      });
+    const attachments: DeliveryAttachment[] = [await diagnostic];
+    if (infrared) {
+      const image = await infrared;
+      if (image) attachments.push(image);
     }
     return attachments;
+  }
+
+  async getCloudMotionAnimations(): Promise<AnimationAttachment[]> {
+    const results = await Promise.allSettled([
+      this.getSatelliteAnimation(),
+      this.getCloudDiagnosticAnimation(),
+    ]);
+    const animations = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    for (const result of results) {
+      if (result.status === "rejected") {
+        this.logger.warn({ error: result.reason }, "Cloud motion animation is unavailable");
+      }
+    }
+    if (animations.length === 0) throw new Error("Cloud motion animations are unavailable");
+    return animations;
   }
 
   async getRadar(viewport?: MapViewport) {
@@ -94,6 +111,13 @@ export class PublicationService {
   async getMap(viewport: MapViewport): Promise<DeliveryAttachment> {
     if (!this.satellite) throw new Error("Satellite imagery is disabled");
     return this.satellite.getLatest(new Date(), viewport);
+  }
+
+  private async getCloudDiagnosticAnimation(): Promise<AnimationAttachment> {
+    if (!this.cloudAnimation) throw new Error("Cloud diagnostic animation is disabled");
+    const animation = await this.cloudAnimation.getLatest();
+    if (!animation) throw new Error("Cloud diagnostic animation does not have enough frames");
+    return animation;
   }
 
   private async create(

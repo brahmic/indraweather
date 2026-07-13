@@ -83,16 +83,17 @@ describe("PublicationService", () => {
     expect(publication.text).not.toContain("/details");
   });
 
-  it("returns the current cloud diagnostic together with its separate animation", async () => {
+  it("returns the current cloud diagnostic together with a static infrared image", async () => {
     const image = { kind: "image", filename: "clouds.png" } as never;
-    const animation = { kind: "animation", filename: "clouds.mp4" } as never;
+    const infrared = { kind: "image", filename: "infrared.png" } as never;
+    const cloudAnimation = { getLatest: vi.fn() };
     const service = new PublicationService(
       {} as never,
-      null,
+      { getLatestInfraredSnapshot: async () => infrared } as never,
       null,
       null,
       { getLatest: async () => image } as never,
-      { getLatest: async () => animation } as never,
+      cloudAnimation as never,
       null,
       null,
       { get: async () => "point forecast" } as never,
@@ -100,7 +101,8 @@ describe("PublicationService", () => {
       { warn: () => undefined } as never,
     );
 
-    await expect(service.getClouds()).resolves.toEqual([image, animation]);
+    await expect(service.getClouds()).resolves.toEqual([image, infrared]);
+    expect(cloudAnimation.getLatest).not.toHaveBeenCalled();
   });
 
   it("adds the model map to details without changing the main bulletin", async () => {
@@ -140,9 +142,10 @@ describe("PublicationService", () => {
     expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt);
   });
 
-  it("keeps satellite animation out of regular bulletins and exposes it on demand", async () => {
-    const animation = { kind: "animation", filename: "movement.mp4" } as never;
-    const satelliteAnimation = { getLatest: vi.fn(async () => animation) };
+  it("keeps animations out of regular bulletins and exposes cloud motion on demand", async () => {
+    const infraredAnimation = { kind: "animation", filename: "infrared.mp4" } as never;
+    const diagnosticAnimation = { kind: "animation", filename: "diagnostic.mp4" } as never;
+    const satelliteAnimation = { getLatest: vi.fn(async () => infraredAnimation) };
     const service = new PublicationService(
       {
         getFreshOrRun: async () => ({
@@ -157,7 +160,7 @@ describe("PublicationService", () => {
       satelliteAnimation as never,
       null,
       null,
-      null,
+      { getLatest: vi.fn(async () => diagnosticAnimation) } as never,
       null,
       null,
       { get: async () => "point forecast" } as never,
@@ -166,7 +169,31 @@ describe("PublicationService", () => {
     );
 
     await expect(service.getFreshOrRun()).resolves.toMatchObject({ attachments: [] });
-    await expect(service.getSatelliteAnimation()).resolves.toBe(animation);
+    await expect(service.getCloudMotionAnimations()).resolves.toEqual([
+      infraredAnimation,
+      diagnosticAnimation,
+    ]);
     expect(satelliteAnimation.getLatest).toHaveBeenCalledOnce();
+  });
+
+  it("returns the infrared animation when the diagnostic series is not ready", async () => {
+    const infraredAnimation = { kind: "animation", filename: "infrared.mp4" } as never;
+    const logger = { warn: vi.fn() };
+    const service = new PublicationService(
+      {} as never,
+      null,
+      { getLatest: async () => infraredAnimation } as never,
+      null,
+      null,
+      { getLatest: async () => null } as never,
+      null,
+      null,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow",
+      logger as never,
+    );
+
+    await expect(service.getCloudMotionAnimations()).resolves.toEqual([infraredAnimation]);
+    expect(logger.warn).toHaveBeenCalledOnce();
   });
 });

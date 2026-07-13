@@ -20,6 +20,7 @@ import type { MapViewport } from "../domain/map-viewport.js";
 import { renderModelDetails } from "../domain/model-details.js";
 import type { PointForecastService } from "./point-forecast-service.js";
 import type { ForecastMapService } from "./forecast-map-service.js";
+import type { LightningService } from "./lightning-service.js";
 
 export interface DetailsPublication {
   text: string;
@@ -38,6 +39,7 @@ export class PublicationService {
     private readonly pointForecasts: PointForecastService,
     private readonly timeZone: string,
     private readonly logger: Logger,
+    private readonly lightning: LightningService | null = null,
   ) {}
 
   async getFreshOrRun(viewport?: MapViewport): Promise<Publication> {
@@ -127,6 +129,11 @@ export class PublicationService {
   async getRadar(viewport?: MapViewport) {
     if (!this.radar) throw new Error("Sentinel-1 radar is not configured");
     return this.radar.getLatest(viewport);
+  }
+
+  async getLightning(viewport?: MapViewport): Promise<ImageAttachment> {
+    if (!this.lightning) throw new Error("EUMETSAT Lightning Imager is not configured");
+    return this.lightning.getLatest(viewport);
   }
 
   async getMap(viewport: MapViewport): Promise<DeliveryAttachment> {

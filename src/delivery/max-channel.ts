@@ -282,6 +282,9 @@ export class MaxChannel implements DeliveryChannel {
           "Радар Sentinel-1 временно недоступен или ещё не настроен.",
         );
         break;
+      case "lightning":
+        await this.sendLightning(sender.user_id);
+        break;
       case "map":
         await this.sendMap(sender.user_id);
         break;
@@ -348,6 +351,21 @@ export class MaxChannel implements DeliveryChannel {
     } finally {
       await this.api.deleteMessage(progressId).catch((error: unknown) =>
         this.logger.debug({ error }, "Failed to remove MAX clouds progress message"));
+    }
+  }
+
+  private async sendLightning(userId: number): Promise<void> {
+    const progressId = await this.api.sendMessage(userId, "⏳ Получаю спутниковые данные о вспышках…");
+    try {
+      const map = await this.getMapSelection(userId);
+      await this.sendDiagnostic(
+        userId,
+        async () => [await this.publications.getLightning(map.viewport)],
+        "Данные о вспышках молний временно недоступны.",
+      );
+    } finally {
+      await this.api.deleteMessage(progressId).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove MAX lightning progress message"));
     }
   }
 

@@ -19,6 +19,8 @@ const envSchema = z.object({
   STORMGLASS_API_KEY: z.string().optional().transform(emptyToUndefined),
   COPERNICUS_CLIENT_ID: z.string().optional().transform(emptyToUndefined),
   COPERNICUS_CLIENT_SECRET: z.string().optional().transform(emptyToUndefined),
+  EUMETSAT_CONSUMER_KEY: z.string().optional().transform(emptyToUndefined),
+  EUMETSAT_CONSUMER_SECRET: z.string().optional().transform(emptyToUndefined),
   APP_TIMEZONE: z.string().default("Europe/Moscow"),
   SCHEDULE_TIMES: z.string().default("05:00,11:00,17:00,23:00"),
   SCHEDULE_RETRY_MINUTES: z.coerce.number().int().positive().default(15),
@@ -81,6 +83,9 @@ const envSchema = z.object({
     .default("https://service.eumetsat.int/tle/javascript/data_content_s3a.js"),
   EUMETSAT_TLE_S3B_URL: z.url()
     .default("https://service.eumetsat.int/tle/javascript/data_content_s3b.js"),
+  LIGHTNING_WINDOW_MINUTES: z.coerce.number().int().min(10).max(120).default(30),
+  LIGHTNING_CACHE_MINUTES: z.coerce.number().int().min(1).max(30).default(5),
+  LIGHTNING_MAX_PRODUCT_BYTES: z.coerce.number().int().positive().max(200_000_000).default(60_000_000),
   COPERNICUS_RADAR_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(30).default(14),
   RADAR_CACHE_MINUTES: z.coerce.number().int().positive().default(30),
 });
@@ -144,6 +149,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     max: resolveMaxConfig(parsed.MAX_BOT_TOKEN, parsed.MAX_PUBLIC_BASE_URL),
     stormglassApiKey: parsed.STORMGLASS_API_KEY,
     copernicus: resolveCopernicusConfig(parsed.COPERNICUS_CLIENT_ID, parsed.COPERNICUS_CLIENT_SECRET, parsed.COPERNICUS_RADAR_LOOKBACK_DAYS),
+    lightning: resolveEumetsatLightningConfig(
+      parsed.EUMETSAT_CONSUMER_KEY,
+      parsed.EUMETSAT_CONSUMER_SECRET,
+      parsed.LIGHTNING_WINDOW_MINUTES,
+      parsed.LIGHTNING_CACHE_MINUTES,
+      parsed.LIGHTNING_MAX_PRODUCT_BYTES,
+    ),
     radarCacheMinutes: parsed.RADAR_CACHE_MINUTES,
     timeZone: parsed.APP_TIMEZONE,
     scheduleTimes: parseSchedule(parsed.SCHEDULE_TIMES),
@@ -227,6 +239,20 @@ function resolveCopernicusConfig(clientId: string | undefined, clientSecret: str
   if (!clientId && !clientSecret) return null;
   if (!clientId || !clientSecret) throw new Error("COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET must be set together");
   return { clientId, clientSecret, lookbackDays };
+}
+
+function resolveEumetsatLightningConfig(
+  consumerKey: string | undefined,
+  consumerSecret: string | undefined,
+  windowMinutes: number,
+  cacheMinutes: number,
+  maxProductBytes: number,
+) {
+  if (!consumerKey && !consumerSecret) return null;
+  if (!consumerKey || !consumerSecret) {
+    throw new Error("EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET must be set together");
+  }
+  return { consumerKey, consumerSecret, windowMinutes, cacheMinutes, maxProductBytes };
 }
 
 function resolveMaxConfig(token: string | undefined, publicBaseUrl: string | undefined) {

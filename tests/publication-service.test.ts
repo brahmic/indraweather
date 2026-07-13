@@ -54,6 +54,30 @@ describe("formatDetailedSatellitePartial", () => {
 });
 
 describe("PublicationService", () => {
+  it("returns an LI lightning map only when the service is configured", async () => {
+    const image = { kind: "image", filename: "lightning.png" } as never;
+    const lightning = { getLatest: vi.fn(async () => image) };
+    const service = new PublicationService(
+      {} as never,
+      null, null, null, null, null, null, null,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow", { warn: () => undefined } as never,
+      lightning as never,
+    );
+    const viewport = { bbox: [30, 64, 36, 68] as [number, number, number, number], width: 1_000, height: 800 };
+
+    await expect(service.getLightning(viewport)).resolves.toBe(image);
+    expect(lightning.getLatest).toHaveBeenCalledWith(viewport);
+
+    const disabled = new PublicationService(
+      {} as never,
+      null, null, null, null, null, null, null,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow", { warn: () => undefined } as never,
+    );
+    await expect(disabled.getLightning()).rejects.toThrow(/not configured/u);
+  });
+
   it("leaves detail actions to delivery channels", async () => {
     const service = new PublicationService(
       {

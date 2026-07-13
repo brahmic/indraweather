@@ -48,6 +48,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "status", description: "Статус обновления" },
       { command: "clouds", description: "Облачность и ИК-снимок" },
       { command: "radar", description: "Радар Sentinel-1" },
+      { command: "lightning", description: "Вспышки молний MTG" },
       { command: "map", description: "Настроить охват карты" },
     ]);
     this.bot.start({
@@ -137,6 +138,10 @@ export class TelegramChannel implements DeliveryChannel {
         async () => [await this.publications.getRadar(await this.getMapViewport(String(ctx.chat.id)))],
         "Радар Sentinel-1 временно недоступен или ещё не настроен.",
       );
+    });
+
+    this.bot.command("lightning", async (ctx) => {
+      await this.sendLightning(ctx.chat.id);
     });
 
     this.bot.command("map", async (ctx) => {
@@ -446,6 +451,20 @@ export class TelegramChannel implements DeliveryChannel {
     } finally {
       await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
         this.logger.debug({ error }, "Failed to remove clouds progress message"));
+    }
+  }
+
+  private async sendLightning(chatId: number): Promise<void> {
+    const progress = await this.bot.api.sendMessage(chatId, "⏳ Получаю спутниковые данные о вспышках…");
+    try {
+      await this.sendDiagnostic(
+        chatId,
+        async () => [await this.publications.getLightning(await this.getMapViewport(String(chatId)))],
+        "Данные о вспышках молний временно недоступны.",
+      );
+    } finally {
+      await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove lightning progress message"));
     }
   }
 

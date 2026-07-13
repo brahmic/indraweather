@@ -414,6 +414,42 @@ describe("TelegramChannel /clouds", () => {
   });
 });
 
+describe("TelegramChannel /lightning", () => {
+  it("shows progress and sends the LI map for the recipient viewport", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = { getLightning: vi.fn(async () => bulletinImage("lightning.png")) };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => [31, 65, 35, 67]) } as never,
+      publications as never,
+      [],
+      { timeZone: "Europe/Moscow", satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 } } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: method === "deleteMessage" ? true : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/lightning", 15));
+
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendPhoto", "deleteMessage"]);
+    expect(calls[0]?.body.text).toContain("данные о вспышках");
+    expect(publications.getLightning).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [31, 65, 35, 67],
+    }));
+  });
+});
+
 describe("TelegramChannel /details", () => {
   it("sends only model text", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];

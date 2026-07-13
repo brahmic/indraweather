@@ -140,6 +140,25 @@ describe("loadConfig", () => {
     })).toThrow(/COPERNICUS_CLIENT_ID/u);
   });
 
+  it("enables Lightning Imager only with the permanent EUMETSAT credential pair", () => {
+    const config = loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      EUMETSAT_CONSUMER_KEY: "consumer-key",
+      EUMETSAT_CONSUMER_SECRET: "consumer-secret",
+    });
+    expect(config.lightning).toEqual({
+      consumerKey: "consumer-key",
+      consumerSecret: "consumer-secret",
+      windowMinutes: 30,
+      cacheMinutes: 5,
+      maxProductBytes: 60_000_000,
+    });
+    expect(() => loadConfig({
+      DATABASE_URL: "postgres://localhost/test",
+      EUMETSAT_CONSUMER_KEY: "consumer-key",
+    })).toThrow(/EUMETSAT_CONSUMER_KEY/u);
+  });
+
   it("parses separate recipient allowlists for the hidden manual update command", () => {
     const config = loadConfig({
       DATABASE_URL: "postgres://localhost/test",

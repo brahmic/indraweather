@@ -8,6 +8,7 @@ describe("formatHelpHtml", () => {
     expect(text).toContain("05:00, 11:00, 17:00, 23:00 МСК");
     expect(text).toContain("<code>/weather</code>");
     expect(text).toContain("<code>/forecast</code>");
+    expect(text).toContain("<code>/lightning</code>");
     expect(text).toContain("кнопки «Детали», «Облачность», «Прогноз погоды» и «Движение облаков»");
     expect(text).toContain("границы моделей, а не среднее значение");
     expect(text).toContain("При расхождении под точкой приводятся оба сценария моделей");

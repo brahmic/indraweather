@@ -7,6 +7,7 @@ import { RadarService } from "./application/radar-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { ForecastMapService } from "./application/forecast-map-service.js";
+import { LightningService } from "./application/lightning-service.js";
 import { PublicationService } from "./application/publication-service.js";
 import { PointForecastService } from "./application/point-forecast-service.js";
 import {
@@ -25,6 +26,7 @@ import { Database } from "./infrastructure/database.js";
 import { EumetviewClient } from "./infrastructure/eumetview.js";
 import { EumetsatCatalogClient } from "./infrastructure/eumetsat-catalog.js";
 import { EumetsatTleClient } from "./infrastructure/eumetsat-tle.js";
+import { EumetsatLightningClient } from "./infrastructure/eumetsat-lightning.js";
 import { KolgimetClient } from "./infrastructure/kolgimet.js";
 import { OpenMeteoClient } from "./infrastructure/open-meteo.js";
 import { OpenMeteoMarineClient } from "./infrastructure/open-meteo-marine.js";
@@ -288,6 +290,42 @@ const radar = config.copernicus
     },
   )
   : null;
+const lightning = config.lightning
+  ? new LightningService(
+    new EumetsatLightningClient({
+      consumerKey: config.lightning.consumerKey,
+      consumerSecret: config.lightning.consumerSecret,
+      collectionId: "EO:EUM:DAT:0691",
+      searchUrl: "https://api.eumetsat.int/data/search-products/1.0.0/os",
+      downloadUrl: "https://api.eumetsat.int/data/download/1.0.0",
+      timeoutMs: config.weatherTimeoutMs,
+      retries: config.weatherRetryCount,
+      maxProductBytes: config.lightning.maxProductBytes,
+    }),
+    satelliteOverlay,
+    new EumetviewClient({
+      baseUrl: config.satellite.wmsUrl,
+      wfsUrl: config.satellite.wfsUrl,
+      bbox: config.satellite.bbox,
+      width: config.satellite.width,
+      height: config.satellite.height,
+      timeoutMs: config.weatherTimeoutMs,
+      retries: config.weatherRetryCount,
+      maxImageBytes: config.satellite.maxImageBytes,
+    }),
+    points,
+    {
+      bbox: config.satellite.bbox,
+      width: config.satellite.width,
+      height: config.satellite.height,
+      maxImageBytes: config.satellite.maxImageBytes,
+      windowMinutes: config.lightning.windowMinutes,
+      cacheMinutes: config.lightning.cacheMinutes,
+      cacheMaxEntries: config.imageCacheMaxEntries,
+      timeZone: config.timeZone,
+    },
+  )
+  : null;
 const forecastMap = new ForecastMapService(
   database,
   new EumetviewClient({
@@ -337,6 +375,7 @@ const publicationService = new PublicationService(
   pointForecasts,
   config.timeZone,
   logger,
+  lightning,
 );
 const channels: DeliveryChannel[] = [];
 let telegramChannel: TelegramChannel | null = null;
@@ -412,6 +451,7 @@ if (!satellite) logger.warn("Satellite image delivery is disabled");
 if (!satelliteAnimation) logger.warn("Satellite animation delivery is disabled");
 if (!cloudAnimation) logger.warn("Cloud diagnostic animation delivery is disabled");
 if (!detailedSatellite) logger.warn("Detailed satellite image delivery is disabled");
+if (!lightning) logger.warn("EUMETSAT Lightning Imager delivery is disabled");
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, "Shutting down");

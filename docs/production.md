@@ -42,6 +42,14 @@ Space: в Sentinel Hub Dashboard создать клиент типа `Client Cr
 но `/radar` сообщит, что радар не настроен. Не используйте тестовые публичные
 учётные данные Copernicus в production.
 
+Команда `/lightning` использует бесплатные данные EUMETSAT MTG Lightning
+Imager. В EUMETSAT User Portal создать или использовать уже имеющиеся API
+credentials и записать в `.env` постоянные `EUMETSAT_CONSUMER_KEY` и
+`EUMETSAT_CONSUMER_SECRET`. Краткоживущий `API Token` в `.env` не нужен.
+Без этой пары бот продолжает работать, но сообщит, что карта вспышек не
+настроена. Данные запрашиваются только по команде, кэшируются на 5 минут и не
+сохраняются в PostgreSQL.
+
 Для исходящих запросов к MAX Docker image устанавливает официальный
 `Russian Trusted Root CA` Минцифры из `certs/russian_trusted_root_ca.crt`.
 Это отдельная цепочка доверия MAX API: сертификат на вашем поддомене нужен для
@@ -49,10 +57,11 @@ Space: в Sentinel Hub Dashboard создать клиент типа `Client Cr
 Источник сертификата: `https://www.gosuslugi.ru/crt`; SHA-256 fingerprint:
 `D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31`.
 
-Спутниковый источник EUMETSAT не требует ключа. Исходящее HTTPS-соединение с
-`view.eumetsat.int`, `api.eumetsat.int` и `service.eumetsat.int` должно быть
-разрешено. При недоступности источника выпуск продолжается без изображения и с
-указанием причины пропуска детального кадра.
+Публичные спутниковые слои EUMETView не требуют ключа. Исходящее
+HTTPS-соединение с `view.eumetsat.int`, `api.eumetsat.int` и
+`service.eumetsat.int` должно быть разрешено. При недоступности источника
+выпуск продолжается без изображения и с указанием причины пропуска детального
+кадра.
 
 Фоновая очередь спутниковой анимации собирает ИК-кадр каждые 20 минут. Кадры и
 короткие MP4 хранятся в отдельном именованном Docker volume `indra_satellite_animation`,

@@ -431,6 +431,41 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
+  it("sends the LI lightning map for the MAX recipient viewport", async () => {
+    const database = databaseStub();
+    database.getMapViewport.mockResolvedValue([31, 65, 35, 67]);
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-lightning",
+        attempts: 1,
+        payload: messageUpdate("/lightning"),
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = { getLightning: vi.fn(async () => mapImage()) };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-lightning"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("данные о вспышках"));
+    expect(publications.getLightning).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [31, 65, 35, 67],
+    }));
+    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "map.png");
+    expect(api.deleteMessage).toHaveBeenCalledWith("message-1");
+    await channel.stop();
+  });
+
   it("shows help actions as MAX buttons", async () => {
     const database = databaseStub();
     database.claimMaxWebhook

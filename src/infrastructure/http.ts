@@ -2,6 +2,8 @@ export interface FetchOptions {
   timeoutMs: number;
   retries: number;
   headers?: Record<string, string>;
+  method?: "GET" | "POST";
+  body?: string;
 }
 
 export async function fetchText(url: URL | string, options: FetchOptions): Promise<string> {
@@ -42,6 +44,8 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= options.retries; attempt += 1) {
     try {
       const response = await fetch(url, {
+        ...(options.method ? { method: options.method } : {}),
+        ...(options.body !== undefined ? { body: options.body } : {}),
         ...(options.headers ? { headers: options.headers } : {}),
         signal: AbortSignal.timeout(options.timeoutMs),
       });

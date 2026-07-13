@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import type { ImageAttachment } from "../delivery/types.js";
+import type { MapViewport } from "../domain/map-viewport.js";
 import {
   summarizeWeatherCodes,
   weatherConditionForCode,
@@ -30,15 +31,21 @@ export class ForecastMapService {
     private readonly logger: Logger,
   ) {}
 
-  async get(runId: string, referenceAt: Date): Promise<ImageAttachment> {
+  async get(runId: string, referenceAt: Date, viewport?: MapViewport): Promise<ImageAttachment> {
     const forecast = await this.database.getForecastMapSnapshot(runId, referenceAt);
     if (!forecast) throw new Error("No forecast data for forecast map");
+    const options = viewport
+      ? { ...this.options, bbox: viewport.bbox, width: viewport.width, height: viewport.height }
+      : this.options;
+    const coastlineClient = viewport ? this.coastlineClient.withViewport(viewport) : this.coastlineClient;
+    const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
+    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
 
     try {
-      const base = await this.createBase();
-      const coastlined = await this.coastlineOverlay.apply(base, await this.coastlineClient.getCoastline());
-      const withWind = await this.windOverlay.applyForecast(coastlined, forecast, { headerTop: 64 });
-      const data = await this.addConditions(withWind, forecast);
+      const base = await this.createBase(options);
+      const coastlined = await coastlineOverlay.apply(base, await coastlineClient.getCoastline());
+      const withWind = await windOverlay.applyForecast(coastlined, forecast, { headerTop: 64 });
+      const data = await this.addConditions(withWind, forecast, options);
       return {
         kind: "image",
         data,
@@ -54,94 +61,99 @@ export class ForecastMapService {
     }
   }
 
-  private async createBase(): Promise<Uint8Array> {
+  private async createBase(options: ForecastMapOptions): Promise<Uint8Array> {
     const grid = [0.2, 0.4, 0.6, 0.8].flatMap((fraction) => [
-      `<path d="M${Math.round(this.options.width * fraction)} 0V${this.options.height}" />`,
-      `<path d="M0 ${Math.round(this.options.height * fraction)}H${this.options.width}" />`,
+      `<path d="M${Math.round(options.width * fraction)} 0V${options.height}" />`,
+      `<path d="M0 ${Math.round(options.height * fraction)}H${options.width}" />`,
     ]).join("\n");
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${this.options.width}" height="${this.options.height}">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${options.width}" height="${options.height}">
       <rect width="100%" height="100%" fill="#527f91"/>
       <g fill="none" stroke="#d5e5ea" stroke-opacity="0.16" stroke-width="1">${grid}</g>
     </svg>`;
     return new Uint8Array(await sharp(Buffer.from(svg)).png().toBuffer());
   }
 
-  private async addConditions(image: Uint8Array, forecast: ForecastMapSnapshot): Promise<Uint8Array> {
+  private async addConditions(
+    image: Uint8Array,
+    forecast: ForecastMapSnapshot,
+    options: ForecastMapOptions,
+  ): Promise<Uint8Array> {
     const time = new Intl.DateTimeFormat("ru-RU", {
-      timeZone: this.options.timeZone,
+      timeZone: options.timeZone,
       hour: "2-digit",
       minute: "2-digit",
     }).format(forecast.forecastAt);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${this.options.width}" height="${this.options.height}">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${options.width}" height="${options.height}">
       <g>
         <rect x="12" y="12" width="510" height="40" rx="3" fill="#101820" fill-opacity="0.84"/>
         <text x="24" y="29" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="14" font-weight="700">МОДЕЛЬНАЯ КАРТА · ПРОГНОЗ ${time} МСК</text>
         <text x="24" y="45" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="12">Одна иконка: ECMWF и GFS сходятся · E/G: разные сценарии</text>
       </g>
-      ${this.renderConditions(forecast)}
+      ${this.renderConditions(forecast, options)}
     </svg>`;
     const data = await sharp(image).composite([{ input: Buffer.from(svg) }]).png().toBuffer();
-    if (data.byteLength > this.options.maxImageBytes) {
-      throw new Error(`Forecast map exceeds ${this.options.maxImageBytes} bytes`);
+    if (data.byteLength > options.maxImageBytes) {
+      throw new Error(`Forecast map exceeds ${options.maxImageBytes} bytes`);
     }
     return new Uint8Array(data);
   }
 
-  private renderConditions(forecast: ForecastMapSnapshot): string {
+  private renderConditions(forecast: ForecastMapSnapshot, options: ForecastMapOptions): string {
     const groups = new Map<string, ForecastMapSnapshot["points"]>();
     for (const point of forecast.points) {
       const current = groups.get(point.pointId) ?? [];
       current.push(point);
       groups.set(point.pointId, current);
     }
-    return [...groups.values()].map((models) => this.renderPointConditions(models)).join("\n");
+    return [...groups.values()].map((models) => this.renderPointConditions(models, options)).join("\n");
   }
 
-  private renderPointConditions(models: ForecastMapSnapshot["points"]): string {
+  private renderPointConditions(
+    models: ForecastMapSnapshot["points"],
+    options: ForecastMapOptions,
+  ): string {
     const first = models[0];
     if (!first) return "";
     const ecmwf = models.find((model) => model.model === "ecmwf");
     const gfs = models.find((model) => model.model === "gfs");
     const ecmwfCondition = weatherConditionForCode(ecmwf?.weatherCode);
     const gfsCondition = weatherConditionForCode(gfs?.weatherCode);
-    const [pointX, pointY] = this.project(first.longitude, first.latitude);
+    const [pointX, pointY] = this.project(first.longitude, first.latitude, options);
     const width = ecmwfCondition && gfsCondition
       && weatherConditionGroup(ecmwfCondition) !== weatherConditionGroup(gfsCondition)
-      ? 124
-      : 66;
-    const x = Math.max(8, Math.min(this.options.width - width - 8, pointX > this.options.width * 0.72 ? pointX - width - 12 : pointX + 12));
-    const y = Math.max(122, Math.min(this.options.height - 46, pointY + 14));
+      ? 74
+      : 52;
+    const x = Math.max(8, Math.min(options.width - width - 8, pointX > options.width * 0.72 ? pointX - width - 12 : pointX + 12));
+    const y = Math.max(122, Math.min(options.height - 50, pointY + 14));
 
     if (ecmwfCondition && gfsCondition
       && weatherConditionGroup(ecmwfCondition) === weatherConditionGroup(gfsCondition)) {
-      return conditionCard(
+      return conditionMarker(
         x,
         y,
-        width,
         summarizeWeatherCodes([ecmwf?.weatherCode, gfs?.weatherCode]),
         formatTemperatureRange([ecmwf?.temperatureC, gfs?.temperatureC]),
       );
     }
     if (ecmwfCondition && gfsCondition) {
-      return `${conditionCard(x, y, 62, ecmwfCondition, formatTemperature(ecmwf?.temperatureC), "E")}
-        ${conditionCard(x + 62, y, 62, gfsCondition, formatTemperature(gfs?.temperatureC), "G", 0, false)}`;
+      return `${conditionMarker(x, y, ecmwfCondition, formatTemperature(ecmwf?.temperatureC), "E")}
+        ${conditionMarker(x, y + 20, gfsCondition, formatTemperature(gfs?.temperatureC), "G")}`;
     }
     const model = ecmwf ?? gfs;
-    return conditionCard(
+    return conditionMarker(
       x,
       y,
-      width,
       ecmwfCondition ?? gfsCondition,
       formatTemperature(model?.temperatureC),
       ecmwfCondition ? "E" : "G",
     );
   }
 
-  private project(longitude: number, latitude: number): [number, number] {
-    const [west, south, east, north] = this.options.bbox;
+  private project(longitude: number, latitude: number, options: ForecastMapOptions): [number, number] {
+    const [west, south, east, north] = options.bbox;
     return [
-      (longitude - west) / (east - west) * this.options.width,
-      (north - latitude) / (north - south) * this.options.height,
+      (longitude - west) / (east - west) * options.width,
+      (north - latitude) / (north - south) * options.height,
     ];
   }
 
@@ -161,34 +173,26 @@ export class ForecastMapService {
   }
 }
 
-function conditionCard(
+function conditionMarker(
   x: number,
   y: number,
-  width: number,
   weather: WeatherCondition | null,
   temperature: string | null,
   label?: "E" | "G",
-  iconOffset = 0,
-  includeBackground = true,
 ): string {
-  const background = includeBackground
-    ? `<rect x="${round(x)}" y="${round(y)}" width="${width}" height="36" rx="3" fill="#f7fbfc" fill-opacity="0.92"/>`
-    : "";
   const labelSvg = label
-    ? `<text x="${round(x + 6)}" y="${round(y + 21)}" fill="#385763" font-family="Noto Sans, sans-serif" font-size="11" font-weight="700">${label}</text>`
+    ? `<text x="${round(x)}" y="${round(y + 5)}" fill="#ffffff" stroke="#17242b" stroke-width="2.5" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="10" font-weight="800">${label}</text>`
     : "";
-  const centerX = temperature === null
-    ? x + (label ? width / 2 : width / 2)
-    : x + (label ? 26 : 18) + iconOffset;
+  const centerX = x + (label ? 17 : 9);
   const temperatureSvg = temperature
-    ? `<text x="${round(x + width - 6)}" y="${round(y + 23)}" text-anchor="end" fill="#132d36" font-family="Noto Sans, sans-serif" font-size="12" font-weight="700">${temperature}</text>`
+    ? `<text x="${round(x + (label ? 31 : 22))}" y="${round(y + 5)}" fill="#ffffff" stroke="#17242b" stroke-width="3" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="12" font-weight="800">${temperature}</text>`
     : "";
-  return `<g>${background}${labelSvg}${weatherSymbol(weather, centerX, y + 17, 8)}${temperatureSvg}</g>`;
+  return `<g>${labelSvg}${weatherSymbol(weather, centerX, y, 7)}${temperatureSvg}</g>`;
 }
 
 function weatherSymbol(weather: WeatherCondition | null, x: number, y: number, size: number): string {
   if (!weather) {
-    return `<text x="${round(x)}" y="${round(y + 5)}" text-anchor="middle" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="18" font-weight="700">?</text>`;
+    return `<text x="${round(x)}" y="${round(y + 5)}" text-anchor="middle" fill="#ffffff" stroke="#17242b" stroke-width="3" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="16" font-weight="700">?</text>`;
   }
   const scale = size / 10;
   const offset = (value: number) => round(value * scale);
@@ -234,7 +238,8 @@ function formatTemperatureRange(temperatures: Array<number | null | undefined>):
   const minimum = Math.min(...values);
   const maximum = Math.max(...values);
   if (minimum === maximum) return formatTemperature(minimum);
-  return `${formatTemperature(minimum)}…${formatTemperature(maximum)}`;
+  const maximumText = `${maximum > 0 ? "" : maximum < 0 ? "-" : ""}${Math.abs(maximum)}°`;
+  return `${formatTemperature(minimum)}…${maximumText}`;
 }
 
 function sunSymbol(x: number, y: number, size: number): string {

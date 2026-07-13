@@ -443,6 +443,70 @@ export class Database {
     } : null;
   }
 
+  async getBulletin(bulletinId: string): Promise<BulletinRecord | null> {
+    const result = await this.pool.query<{
+      id: string;
+      run_id: string;
+      content: string;
+      content_format: "plain" | "telegram_html";
+      summary: unknown;
+      created_at: Date;
+    }>(`
+      SELECT id, run_id, content, content_format, summary, created_at
+      FROM bulletins
+      WHERE id = $1
+    `, [bulletinId]);
+    const row = result.rows[0];
+    return row ? {
+      id: row.id,
+      runId: row.run_id,
+      content: row.content,
+      contentFormat: row.content_format,
+      summary: reviveSummary(row.summary),
+      createdAt: row.created_at,
+    } : null;
+  }
+
+  async getScheduledBulletin(scheduledFor: Date): Promise<BulletinRecord | null> {
+    const result = await this.pool.query<{
+      id: string;
+      run_id: string;
+      content: string;
+      content_format: "plain" | "telegram_html";
+      summary: unknown;
+      created_at: Date;
+    }>(`
+      SELECT id, run_id, content, content_format, summary, created_at
+      FROM bulletins
+      WHERE kind = 'scheduled' AND dedupe_key = $1
+    `, [`scheduled:${scheduledFor.toISOString()}`]);
+    const row = result.rows[0];
+    return row ? {
+      id: row.id,
+      runId: row.run_id,
+      content: row.content,
+      contentFormat: row.content_format,
+      summary: reviveSummary(row.summary),
+      createdAt: row.created_at,
+    } : null;
+  }
+
+  async removeExpiredForecastData(before: Date): Promise<{ forecasts: number; marine: number }> {
+    const forecasts = await this.pool.query(`
+      DELETE FROM forecast_values
+      USING collection_runs
+      WHERE forecast_values.run_id = collection_runs.id
+        AND collection_runs.completed_at < $1
+    `, [before]);
+    const marine = await this.pool.query(`
+      DELETE FROM marine_forecast_values
+      USING collection_runs
+      WHERE marine_forecast_values.run_id = collection_runs.id
+        AND collection_runs.completed_at < $1
+    `, [before]);
+    return { forecasts: forecasts.rowCount ?? 0, marine: marine.rowCount ?? 0 };
+  }
+
   async getForecastValues(runId: string, pointId: string): Promise<ForecastValue[]> {
     const result = await this.pool.query<{
       point_id: string;
@@ -1182,14 +1246,22 @@ export class Database {
     await this.pool.query(`
       INSERT INTO deliveries
         (bulletin_id, channel, recipient_id, status, attempts,
-         external_message_id, last_error, sent_at)
+         external_message_id, last_error, sent_at, next_attempt_at)
       VALUES ($1, $2, $3, $4, 1, $5, $6,
-        CASE WHEN $4 = 'sent' THEN now() ELSE NULL END)
+        CASE WHEN $4 = 'sent' THEN now() ELSE NULL END,
+        CASE WHEN $4 = 'failed' THEN now() + interval '30 seconds' ELSE NULL END)
       ON CONFLICT (bulletin_id, channel, recipient_id) DO UPDATE SET
         status = EXCLUDED.status,
         external_message_id = EXCLUDED.external_message_id,
         last_error = EXCLUDED.last_error,
         sent_at = EXCLUDED.sent_at,
+        next_attempt_at = CASE
+          WHEN EXCLUDED.status = 'sent' THEN NULL
+          ELSE now() + (
+            LEAST(3600, 30 * POWER(2, GREATEST(0, deliveries.attempts - 1)))
+            * interval '1 second'
+          )
+        END,
         updated_at = now()
     `, [bulletinId, channel, recipientId, status, externalMessageId, error]);
   }
@@ -1205,9 +1277,29 @@ export class Database {
       ON CONFLICT (bulletin_id, channel, recipient_id) DO UPDATE SET
         status = 'pending', attempts = deliveries.attempts + 1, updated_at = now()
       WHERE deliveries.status = 'failed'
+        AND (deliveries.next_attempt_at IS NULL OR deliveries.next_attempt_at <= now())
       RETURNING 1
     `, [bulletinId, channel, recipientId]);
     return Boolean(result.rowCount);
+  }
+
+  async getRetryableDeliveryBulletinIds(
+    channel: string,
+    maxAttempts: number,
+    limit = 10,
+  ): Promise<string[]> {
+    const result = await this.pool.query<{ bulletin_id: string }>(`
+      SELECT bulletin_id
+      FROM deliveries
+      WHERE channel = $1
+        AND status = 'failed'
+        AND attempts < $2
+        AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+      GROUP BY bulletin_id
+      ORDER BY MIN(updated_at)
+      LIMIT $3
+    `, [channel, maxAttempts, limit]);
+    return result.rows.map((row) => row.bulletin_id);
   }
 
   async withCollectorLock<T>(operation: () => Promise<T>): Promise<T | null> {

@@ -22,7 +22,11 @@ const envSchema = z.object({
   APP_TIMEZONE: z.string().default("Europe/Moscow"),
   SCHEDULE_TIMES: z.string().default("05:00,11:00,17:00,23:00"),
   SCHEDULE_RETRY_MINUTES: z.coerce.number().int().positive().default(15),
+  SCHEDULE_RECOVERY_HOURS: z.coerce.number().int().min(1).max(24).default(8),
   FRESH_FORECAST_MINUTES: z.coerce.number().int().positive().default(60),
+  DELIVERY_RETRY_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(300).default(30),
+  DELIVERY_RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  FORECAST_DATA_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(90),
   UPDATE_TELEGRAM_RECIPIENT_IDS: z.string().default(""),
   UPDATE_MAX_RECIPIENT_IDS: z.string().default(""),
   WEATHER_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
@@ -42,6 +46,7 @@ const envSchema = z.object({
   SATELLITE_HEIGHT: z.coerce.number().int().min(240).max(2000).default(800),
   SATELLITE_MAX_AGE_MINUTES: z.coerce.number().int().positive().default(90),
   SATELLITE_CACHE_MINUTES: z.coerce.number().int().positive().default(10),
+  IMAGE_CACHE_MAX_ENTRIES: z.coerce.number().int().min(4).max(64).default(16),
   SATELLITE_MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(9_000_000),
   SATELLITE_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
@@ -54,6 +59,7 @@ const envSchema = z.object({
   CLOUD_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   CLOUD_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/cloud-animation"),
+  CLOUD_DIAGNOSTIC_CACHE_MINUTES: z.coerce.number().int().positive().default(10),
   PERSONAL_ANIMATION_ENABLED: z.enum(["true", "false"]).default("true")
     .transform((value) => value === "true"),
   PERSONAL_ANIMATION_DIRECTORY: z.string().default("/var/lib/indra/personal-animation"),
@@ -76,6 +82,7 @@ const envSchema = z.object({
   EUMETSAT_TLE_S3B_URL: z.url()
     .default("https://service.eumetsat.int/tle/javascript/data_content_s3b.js"),
   COPERNICUS_RADAR_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(30).default(14),
+  RADAR_CACHE_MINUTES: z.coerce.number().int().positive().default(30),
 });
 
 const pointSchema = z.object({
@@ -137,10 +144,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     max: resolveMaxConfig(parsed.MAX_BOT_TOKEN, parsed.MAX_PUBLIC_BASE_URL),
     stormglassApiKey: parsed.STORMGLASS_API_KEY,
     copernicus: resolveCopernicusConfig(parsed.COPERNICUS_CLIENT_ID, parsed.COPERNICUS_CLIENT_SECRET, parsed.COPERNICUS_RADAR_LOOKBACK_DAYS),
+    radarCacheMinutes: parsed.RADAR_CACHE_MINUTES,
     timeZone: parsed.APP_TIMEZONE,
     scheduleTimes: parseSchedule(parsed.SCHEDULE_TIMES),
     scheduleRetryMinutes: parsed.SCHEDULE_RETRY_MINUTES,
+    scheduleRecoveryHours: parsed.SCHEDULE_RECOVERY_HOURS,
     freshForecastMinutes: parsed.FRESH_FORECAST_MINUTES,
+    deliveryRetry: {
+      intervalSeconds: parsed.DELIVERY_RETRY_INTERVAL_SECONDS,
+      maxAttempts: parsed.DELIVERY_RETRY_MAX_ATTEMPTS,
+    },
+    forecastDataRetentionDays: parsed.FORECAST_DATA_RETENTION_DAYS,
+    imageCacheMaxEntries: parsed.IMAGE_CACHE_MAX_ENTRIES,
     manualUpdate: {
       telegramRecipientIds: parseRecipientIds(
         parsed.UPDATE_TELEGRAM_RECIPIENT_IDS,
@@ -174,6 +189,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       enabled: parsed.SATELLITE_ENABLED && parsed.CLOUD_ANIMATION_ENABLED,
       directory: parsed.CLOUD_ANIMATION_DIRECTORY,
     },
+    cloudDiagnosticCacheMinutes: parsed.CLOUD_DIAGNOSTIC_CACHE_MINUTES,
     personalAnimation: {
       enabled: parsed.SATELLITE_ENABLED
         && parsed.SATELLITE_ANIMATION_ENABLED

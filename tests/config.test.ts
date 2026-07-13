@@ -79,6 +79,14 @@ describe("loadConfig", () => {
       enabled: true,
       directory: "/var/lib/indra/cloud-animation",
     });
+    expect(config).toMatchObject({
+      scheduleRecoveryHours: 8,
+      deliveryRetry: { intervalSeconds: 30, maxAttempts: 5 },
+      forecastDataRetentionDays: 90,
+      imageCacheMaxEntries: 16,
+      cloudDiagnosticCacheMinutes: 10,
+      radarCacheMinutes: 30,
+    });
     expect(() => loadConfig({
       DATABASE_URL: "postgres://localhost/test",
       SATELLITE_ANIMATION_WINDOW_HOURS: "25",

@@ -166,7 +166,53 @@ describe("PublicationService", () => {
     const bulletin = await service.getFreshOrRun();
 
     expect(bulletin.attachments).toEqual([map]);
-    expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt);
+    expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt, undefined);
+  });
+
+  it("uses the recipient viewport for every bulletin map", async () => {
+    const createdAt = new Date("2026-07-13T09:00:00Z");
+    const map = { kind: "image", filename: "forecast-map.png" } as never;
+    const forecastMap = { get: vi.fn(async () => map) };
+    const service = new PublicationService(
+      {
+        getFreshOrRun: async () => ({
+          id: "bulletin-1", runId: "run-1", content: "weather", contentFormat: "plain",
+          summary: {}, createdAt,
+        }),
+      } as never,
+      null, null, null, null, null, null, forecastMap as never,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow", { warn: () => undefined } as never,
+    );
+    const viewport = {
+      bbox: [32, 65, 34, 67] as [number, number, number, number],
+      width: 900,
+      height: 700,
+    };
+
+    await service.getFreshOrRun(viewport);
+
+    expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt, viewport);
+  });
+
+  it("rebuilds a stored bulletin for durable delivery retry", async () => {
+    const createdAt = new Date("2026-07-13T09:00:00Z");
+    const bulletins = {
+      getStored: vi.fn(async () => ({
+        id: "bulletin-1", runId: "run-1", content: "weather", contentFormat: "plain",
+        summary: {}, createdAt,
+      })),
+    };
+    const service = new PublicationService(
+      bulletins as never,
+      null, null, null, null, null, null, null,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow", { warn: () => undefined } as never,
+    );
+
+    await expect(service.getStored("bulletin-1")).resolves.toMatchObject({
+      id: "bulletin-1", text: "weather", attachments: [],
+    });
   });
 
   it("orders overview, detailed Sentinel-3, and model map in a bulletin album", async () => {

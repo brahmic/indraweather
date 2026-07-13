@@ -57,6 +57,14 @@ export class BulletinService {
     return fallback;
   }
 
+  async getStored(bulletinId: string): Promise<BulletinRecord | null> {
+    return this.database.getBulletin(bulletinId);
+  }
+
+  async getScheduled(scheduledFor: Date): Promise<BulletinRecord | null> {
+    return this.database.getScheduledBulletin(scheduledFor);
+  }
+
   async run(options: RunBulletinOptions): Promise<BulletinRecord | null> {
     return this.database.withCollectorLock(async () => this.collect(options));
   }
@@ -141,6 +149,7 @@ export class BulletinService {
       );
       await this.database.completeRun(run.id, errors.length > 0 ? "partial" : "succeeded",
         errors.length > 0 ? errors.join(" | ").slice(0, 4000) : null);
+      await this.cleanupForecastData();
       this.logger.info({
         runId: run.id,
         bulletinId: bulletin.id,
@@ -164,6 +173,19 @@ export class BulletinService {
       errors.push(message);
       this.logger.warn({ error: message }, "Official warning request failed");
       return { values: [], unavailable: true };
+    }
+  }
+
+  private async cleanupForecastData(): Promise<void> {
+    try {
+      const removed = await this.database.removeExpiredForecastData(
+        new Date(Date.now() - this.config.forecastDataRetentionDays * 86_400_000),
+      );
+      if (removed.forecasts > 0 || removed.marine > 0) {
+        this.logger.info(removed, "Expired raw forecast data removed");
+      }
+    } catch (error) {
+      this.logger.warn({ error }, "Expired forecast data cleanup failed");
     }
   }
 

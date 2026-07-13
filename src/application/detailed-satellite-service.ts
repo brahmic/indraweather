@@ -35,8 +35,18 @@ export interface DetailedSatelliteOptions {
   timeZone: string;
 }
 
+type CachedDetailedSatelliteResult =
+  | {
+    status: "available";
+    product: SentinelProduct;
+    image: Uint8Array;
+    coveragePercent: number;
+    partial: { preferredCoveragePercent: number; nextPassAt: Date | null } | null;
+  }
+  | { status: "skipped"; reason: DetailedSatelliteSkipReason; nextPassAt: Date | null };
+
 export class DetailedSatelliteService {
-  private cached: { result: DetailedSatelliteResult; cachedAt: Date } | null = null;
+  private cached: { result: CachedDetailedSatelliteResult; cachedAt: Date } | null = null;
 
   constructor(
     private readonly catalog: EumetsatCatalogClient,
@@ -48,24 +58,25 @@ export class DetailedSatelliteService {
   ) {}
 
   async getLatest(now = new Date(), viewport?: MapViewport): Promise<DetailedSatelliteResult> {
-    if (!viewport && this.cached && now.getTime() - this.cached.cachedAt.getTime()
-      < this.options.cacheMinutes * 60_000) return this.cached.result;
-
-    let result: DetailedSatelliteResult;
-    try {
-      result = await this.load(now, viewport);
-    } catch {
-      result = await this.skipped({ code: "source-unavailable" }, now);
+    let result = !viewport && this.cached && now.getTime() - this.cached.cachedAt.getTime()
+      < this.options.cacheMinutes * 60_000
+      ? this.cached.result
+      : null;
+    if (!result) {
+      try {
+        result = await this.load(now, viewport);
+      } catch {
+        result = await this.skipped({ code: "source-unavailable" }, now);
+      }
+      if (!viewport) this.cached = { result, cachedAt: now };
     }
-    if (!viewport) this.cached = { result, cachedAt: now };
-    return result;
+    return this.render(result, now, viewport);
   }
 
-  private async load(now: Date, viewport?: MapViewport): Promise<DetailedSatelliteResult> {
+  private async load(now: Date, viewport?: MapViewport): Promise<CachedDetailedSatelliteResult> {
     const catalog = viewport ? this.catalog.withViewport(viewport) : this.catalog;
     const images = viewport ? this.images.withViewport(viewport) : this.images;
     const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
-    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
     const products = await catalog.findProducts(
       new Date(now.getTime() - 48 * 3_600_000),
       now,
@@ -101,17 +112,9 @@ export class DetailedSatelliteService {
           : null;
         return {
           status: "available",
+          product,
           coveragePercent,
-          attachment: await this.attachment(
-            product,
-            image.data,
-            coveragePercent,
-            now,
-            partial !== null,
-            images,
-            coastlineOverlay,
-            windOverlay,
-          ),
+          image: await this.prepareImage(image.data, images, coastlineOverlay),
           partial,
         };
       } catch {
@@ -128,26 +131,51 @@ export class DetailedSatelliteService {
     return this.skipped(imageErrors > 0 ? { code: "source-unavailable" } : { code: "no-products" }, now);
   }
 
+  private async render(
+    result: CachedDetailedSatelliteResult,
+    now: Date,
+    viewport?: MapViewport,
+  ): Promise<DetailedSatelliteResult> {
+    if (result.status === "skipped") return result;
+    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
+    const image = await windOverlay.apply(result.image, result.product.observedAt);
+    return {
+      status: "available",
+      coveragePercent: result.coveragePercent,
+      attachment: await this.attachment(
+        result.product,
+        image,
+        result.coveragePercent,
+        now,
+        result.partial !== null,
+      ),
+      partial: result.partial,
+    };
+  }
+
+  private async prepareImage(
+    image: Uint8Array,
+    images: EumetviewClient,
+    coastlineOverlay: CoastlineOverlayService,
+  ): Promise<Uint8Array> {
+    const flattened = await sharp(image)
+      .flatten({ background: "#253238" })
+      .png()
+      .toBuffer();
+    return coastlineOverlay.apply(
+      new Uint8Array(flattened),
+      await images.getCoastline(),
+    );
+  }
+
   private async attachment(
     product: SentinelProduct,
     image: Uint8Array,
     coveragePercent: number,
     now: Date,
     partial: boolean,
-    images: EumetviewClient,
-    coastlineOverlay: CoastlineOverlayService,
-    windOverlay: WindOverlayService,
   ): Promise<ImageAttachment> {
-    const flattened = await sharp(image)
-      .flatten({ background: "#253238" })
-      .png()
-      .toBuffer();
-    const coastlined = await coastlineOverlay.apply(
-      new Uint8Array(flattened),
-      await images.getCoastline(),
-    );
-    const withWind = await windOverlay.apply(coastlined, product.observedAt);
-    const data = await this.addFlightOverlay(withWind, product, coveragePercent, now, partial);
+    const data = await this.addFlightOverlay(image, product, coveragePercent, now, partial);
     if (data.byteLength > this.options.maxImageBytes) {
       throw new Error(`Detailed satellite image exceeds ${this.options.maxImageBytes} bytes`);
     }
@@ -214,7 +242,7 @@ export class DetailedSatelliteService {
   private async skipped(
     reason: DetailedSatelliteSkipReason,
     now: Date,
-  ): Promise<DetailedSatelliteResult> {
+  ): Promise<Extract<CachedDetailedSatelliteResult, { status: "skipped" }>> {
     return { status: "skipped", reason, nextPassAt: await this.passes.nextPass(now) };
   }
 }

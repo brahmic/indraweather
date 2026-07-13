@@ -94,6 +94,7 @@ const satellite = config.satellite.enabled
       longitude: 33,
       maxAgeMinutes: config.satellite.maxAgeMinutes,
       cacheMinutes: config.satellite.cacheMinutes,
+      cacheMaxEntries: config.imageCacheMaxEntries,
       timeZone: config.timeZone,
     },
   )
@@ -185,7 +186,13 @@ const cloudDiagnostics = satellite
     new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.satellite.bbox, width: config.satellite.width, height: config.satellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
     satelliteOverlay,
     windOverlay,
-    { latitude: 66, longitude: 33, timeZone: config.timeZone },
+    {
+      latitude: 66,
+      longitude: 33,
+      timeZone: config.timeZone,
+      cacheMinutes: config.cloudDiagnosticCacheMinutes,
+      cacheMaxEntries: config.imageCacheMaxEntries,
+    },
   )
   : null;
 const cloudAnimation = cloudDiagnostics && config.cloudAnimation.enabled
@@ -275,6 +282,10 @@ const radar = config.copernicus
     new EumetviewClient({ baseUrl: config.satellite.wmsUrl, wfsUrl: config.satellite.wfsUrl, bbox: config.detailedSatellite.bbox, width: config.detailedSatellite.width, height: config.detailedSatellite.height, timeoutMs: config.weatherTimeoutMs, retries: config.weatherRetryCount, maxImageBytes: config.satellite.maxImageBytes }),
     detailedWindOverlay,
     config.timeZone,
+    {
+      cacheMinutes: config.radarCacheMinutes,
+      cacheMaxEntries: config.imageCacheMaxEntries,
+    },
   )
   : null;
 const forecastMap = new ForecastMapService(
@@ -371,11 +382,18 @@ if (personalAnimations && maxChannel) {
   });
 }
 if (maxChannel) channels.push(maxChannel);
-const deliveryService = new DeliveryService(channels, logger);
+const deliveryService = new DeliveryService(
+  channels,
+  database,
+  publicationService,
+  config.deliveryRetry,
+  logger,
+);
 scheduler = new Scheduler(
   config.scheduleTimes,
   config.timeZone,
   config.scheduleRetryMinutes,
+  config.scheduleRecoveryHours,
   publicationService,
   deliveryService,
   logger,
@@ -384,9 +402,9 @@ scheduler = new Scheduler(
 const healthServer = startHealthServer(database, config.port, logger, maxChannel);
 if (satelliteAnimation) await satelliteAnimation.start();
 if (cloudAnimation) await cloudAnimation.start();
-scheduler.start();
 await deliveryService.start();
 if (personalAnimations && (telegramChannel || maxChannel)) await personalAnimations.start();
+await scheduler.start();
 if (!config.telegramBotToken) logger.warn("TELEGRAM_BOT_TOKEN is empty; Telegram delivery is disabled");
 if (!maxChannel) logger.warn("MAX_BOT_TOKEN is empty; MAX delivery is disabled");
 if (!stormglass) logger.warn("STORMGLASS_API_KEY is empty; tide data is disabled");

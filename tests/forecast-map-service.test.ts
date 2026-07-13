@@ -27,9 +27,21 @@ describe("ForecastMapService", () => {
       ],
     };
     const database = { getForecastMapSnapshot: vi.fn(async () => snapshot) };
-    const coastlineClient = { getCoastline: vi.fn(async () => [[[30, 64], [36, 68]]]) };
-    const coastlineOverlay = { apply: vi.fn(async (image: Uint8Array) => image) };
-    const windOverlay = { applyForecast: vi.fn(async (image: Uint8Array) => image) };
+    const coastlineClient = {
+      getCoastline: vi.fn(async () => [[[30, 64], [36, 68]]]),
+      withViewport: vi.fn(),
+    };
+    coastlineClient.withViewport.mockReturnValue(coastlineClient);
+    const coastlineOverlay = {
+      apply: vi.fn(async (image: Uint8Array) => image),
+      withViewport: vi.fn(),
+    };
+    coastlineOverlay.withViewport.mockReturnValue(coastlineOverlay);
+    const windOverlay = {
+      applyForecast: vi.fn(async (image: Uint8Array) => image),
+      withViewport: vi.fn(),
+    };
+    windOverlay.withViewport.mockReturnValue(windOverlay);
     const service = new ForecastMapService(
       database as never,
       coastlineClient as never,
@@ -48,8 +60,8 @@ describe("ForecastMapService", () => {
     const result = await service.get("run-1", new Date("2026-07-13T08:40:00Z"));
     const { data, info } = await sharp(result.data).raw().toBuffer({ resolveWithObject: true });
     const header = (18 * info.width + 18) * info.channels;
-    const conditionCard = (614 * info.width + 680) * info.channels;
-    const pongomaConditionCard = (546 * info.width + 680) * info.channels;
+    const conditionMarker = (614 * info.width + 696) * info.channels;
+    const pongomaConditionMarker = (546 * info.width + 680) * info.channels;
     const temperatureRegion = data.subarray(
       (626 * info.width + 722) * info.channels,
       (642 * info.width + 738) * info.channels,
@@ -61,9 +73,18 @@ describe("ForecastMapService", () => {
     expect(result.filename).toBe("forecast-map-2026-07-13T09-00-00Z.png");
     expect(result.caption).toContain("E/G: сценарии различаются");
     expect([...data.subarray(header, header + 3)]).not.toEqual([82, 127, 145]);
-    expect([...data.subarray(conditionCard, conditionCard + 3)]).not.toEqual([82, 127, 145]);
-    expect(data[conditionCard]).toBeGreaterThan(160);
+    expect([...data.subarray(conditionMarker, conditionMarker + 3)]).not.toEqual([82, 127, 145]);
     expect([...temperatureRegion].some((value) => value < 100)).toBe(true);
-    expect([...data.subarray(pongomaConditionCard, pongomaConditionCard + 3)]).not.toEqual([82, 127, 145]);
+    expect([...data.subarray(pongomaConditionMarker, pongomaConditionMarker + 3)]).not.toEqual([82, 127, 145]);
+
+    const viewport = {
+      bbox: [33, 64.5, 35, 66.5] as [number, number, number, number],
+      width: 800,
+      height: 600,
+    };
+    await service.get("run-1", new Date("2026-07-13T08:40:00Z"), viewport);
+    expect(coastlineClient.withViewport).toHaveBeenCalledWith(viewport);
+    expect(coastlineOverlay.withViewport).toHaveBeenCalledWith(viewport);
+    expect(windOverlay.withViewport).toHaveBeenCalledWith(viewport);
   });
 });

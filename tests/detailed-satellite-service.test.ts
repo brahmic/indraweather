@@ -87,6 +87,44 @@ describe("DetailedSatelliteService", () => {
     expect(wind.apply).toHaveBeenCalledOnce();
   });
 
+  it("keeps the Sentinel-3 source cached but redraws wind for each response", async () => {
+    const width = 320;
+    const height = 160;
+    const image = await sharp({
+      create: { width, height, channels: 4, background: { r: 80, g: 120, b: 130, alpha: 1 } },
+    }).png().toBuffer();
+    const observedAt = new Date("2026-07-11T08:00:00Z");
+    const catalog = { findProducts: vi.fn(async () => [{ id: "S3A", platform: "Sentinel-3A", observedAt }]) };
+    const images = {
+      getImage: vi.fn(async () => ({ data: new Uint8Array(image), contentType: "image/png" })),
+      getCoastline: vi.fn(async () => []),
+    };
+    const wind = { apply: vi.fn(async (data: Uint8Array) => data) };
+    const service = new DetailedSatelliteService(
+      catalog as never,
+      images as never,
+      { apply: vi.fn(async (data: Uint8Array) => data) } as never,
+      wind as never,
+      { nextPass: vi.fn(async () => null) } as never,
+      {
+        maxAgeHours: 12,
+        minCoveragePercent: 20,
+        preferredCoveragePercent: 70,
+        cacheMinutes: 30,
+        maxImageBytes: 9_000_000,
+        timeZone: "Europe/Moscow",
+      },
+    );
+
+    const now = new Date("2026-07-11T10:00:00Z");
+    await service.getLatest(now);
+    await service.getLatest(new Date(now.getTime() + 60_000));
+
+    expect(catalog.findProducts).toHaveBeenCalledOnce();
+    expect(images.getImage).toHaveBeenCalledOnce();
+    expect(wind.apply).toHaveBeenCalledTimes(2);
+  });
+
   it("adds the Sentinel-3 flight and partial-coverage marker onto a detailed image", async () => {
     const width = 400;
     const height = 240;

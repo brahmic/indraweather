@@ -4,11 +4,14 @@ import type { MapViewport } from "../domain/map-viewport.js";
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { WindOverlayService } from "./wind-overlay-service.js";
+import { BoundedTtlCache } from "./bounded-ttl-cache.js";
 
 export interface CloudDiagnosticOptions {
   latitude: number;
   longitude: number;
   timeZone: string;
+  cacheMinutes: number;
+  cacheMaxEntries: number;
 }
 
 export type CloudAnimationMode = "cloudtype" | "fog";
@@ -18,23 +21,39 @@ export interface CloudAnimationFrame {
   mode: CloudAnimationMode;
 }
 
+interface CachedCloudImage {
+  data: Uint8Array;
+  contentType: "image/png";
+  filename: string;
+  caption: string;
+  source: string;
+  observedAt: Date;
+}
+
 export class CloudDiagnosticService {
+  private readonly cached: BoundedTtlCache<CachedCloudImage>;
+
   constructor(
     private readonly images: EumetviewClient,
     private readonly coastline: CoastlineOverlayService,
     private readonly windOverlay: WindOverlayService,
     private readonly options: CloudDiagnosticOptions,
-  ) {}
+  ) {
+    this.cached = new BoundedTtlCache(
+      options.cacheMinutes * 60_000,
+      options.cacheMaxEntries,
+    );
+  }
 
   async getLatest(now = new Date(), viewport?: MapViewport): Promise<ImageAttachment> {
     const layer = this.selectLayer(now);
-    return this.getLatestForLayer(layer, true, viewport);
+    return this.getLatestForLayer(layer, now, true, viewport);
   }
 
   async getLatestForAnimation(now = new Date()): Promise<CloudAnimationFrame> {
     const layer = this.selectLayer(now);
     return {
-      attachment: await this.getLatestForLayer(layer, false),
+      attachment: await this.getLatestForLayer(layer, now, false),
       mode: modeForLayer(layer),
     };
   }
@@ -83,33 +102,38 @@ export class CloudDiagnosticService {
 
   private async getLatestForLayer(
     layer: SatelliteLayer,
+    now: Date,
     includeMapContext: boolean,
     viewport?: MapViewport,
-    observedAt?: Date,
   ): Promise<ImageAttachment> {
-    const images = viewport ? this.images.withViewport(viewport) : this.images;
-    const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
+    const cacheKey = `${layer.name}:${includeMapContext ? "context" : "coastline"}:${viewportKey(viewport)}`;
+    const cached = await this.cached.getOrLoad(cacheKey, now, async () => {
+      const images = viewport ? this.images.withViewport(viewport) : this.images;
+      const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
+      const timestamp = (await images.getLatestMetadata(layer)).observedAt;
+      const image = await images.getImage(layer, timestamp);
+      const isDay = layer.name === DAY_LAYER.name;
+      const mode = isDay ? "типы облаков" : "туман и низкая облачность";
+      return {
+        data: await coastline.apply(
+          image.data,
+          await images.getCoastline(),
+          { includeMapContext },
+        ),
+        contentType: image.contentType,
+        filename: `clouds-${isDay ? "type" : "fog"}-${fileTime(timestamp)}.png`,
+        caption: `Кемь - Кандалакша · ${mode} · ${formatTime(timestamp, this.options.timeZone)} МСК\nИсточник: EUMETSAT EUMETView`,
+        source: "EUMETSAT EUMETView",
+        observedAt: timestamp,
+      };
+    });
     const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
-    const timestamp = observedAt ?? (await images.getLatestMetadata(layer)).observedAt;
-    const image = await images.getImage(layer, timestamp);
-    const coastlined = await coastline.apply(
-      image.data,
-      await images.getCoastline(),
-      { includeMapContext },
-    );
-    const data = includeMapContext
-      ? await windOverlay.apply(coastlined, timestamp)
-      : coastlined;
-    const isDay = layer.name === DAY_LAYER.name;
-    const mode = isDay ? "типы облаков" : "туман и низкая облачность";
     return {
       kind: "image",
-      data,
-      contentType: "image/png",
-      filename: `clouds-${isDay ? "type" : "fog"}-${fileTime(timestamp)}.png`,
-      caption: `Кемь - Кандалакша · ${mode} · ${formatTime(timestamp, this.options.timeZone)} МСК\nИсточник: EUMETSAT EUMETView`,
-      source: "EUMETSAT EUMETView",
-      observedAt: timestamp,
+      ...cached,
+      data: includeMapContext
+        ? await windOverlay.apply(cached.data, cached.observedAt)
+        : cached.data,
     };
   }
 
@@ -138,4 +162,8 @@ function formatTime(date: Date, timeZone: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function viewportKey(viewport: MapViewport | undefined): string {
+  return viewport ? `${viewport.bbox.join(",")}:${viewport.width}x${viewport.height}` : "default";
 }

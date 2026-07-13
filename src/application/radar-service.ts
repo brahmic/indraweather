@@ -4,23 +4,48 @@ import type { CopernicusRadarClient } from "../infrastructure/copernicus-radar.j
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { EumetviewClient } from "../infrastructure/eumetview.js";
 import type { WindOverlayService } from "./wind-overlay-service.js";
+import { BoundedTtlCache } from "./bounded-ttl-cache.js";
+
+export interface RadarServiceOptions {
+  cacheMinutes: number;
+  cacheMaxEntries: number;
+}
+
+interface CachedRadarImage {
+  data: Uint8Array;
+  observedAt: Date;
+}
 
 export class RadarService {
+  private readonly cached: BoundedTtlCache<CachedRadarImage>;
+
   constructor(
     private readonly radar: CopernicusRadarClient,
     private readonly coastline: CoastlineOverlayService,
     private readonly coastlineSource: EumetviewClient,
     private readonly windOverlay: WindOverlayService,
     private readonly timeZone: string,
-  ) {}
+    private readonly options: RadarServiceOptions,
+  ) {
+    this.cached = new BoundedTtlCache(
+      options.cacheMinutes * 60_000,
+      options.cacheMaxEntries,
+    );
+  }
 
   async getLatest(viewport?: MapViewport): Promise<ImageAttachment> {
-    const image = await this.radar.getLatest(new Date(), viewport);
-    const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
-    const coastlineSource = viewport ? this.coastlineSource.withViewport(viewport) : this.coastlineSource;
+    const now = new Date();
+    const image = await this.cached.getOrLoad(`radar:${viewportKey(viewport)}`, now, async () => {
+      const source = await this.radar.getLatest(now, viewport);
+      const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
+      const coastlineSource = viewport ? this.coastlineSource.withViewport(viewport) : this.coastlineSource;
+      return {
+        data: await coastline.apply(source.data, await coastlineSource.getCoastline()),
+        observedAt: source.observedAt,
+      };
+    });
     const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
-    const coastlined = await coastline.apply(image.data, await coastlineSource.getCoastline());
-    const data = await windOverlay.apply(coastlined, image.observedAt);
+    const data = await windOverlay.apply(image.data, image.observedAt);
     const time = new Intl.DateTimeFormat("ru-RU", {
       timeZone: this.timeZone,
       day: "2-digit",
@@ -38,4 +63,8 @@ export class RadarService {
       observedAt: image.observedAt,
     };
   }
+}
+
+function viewportKey(viewport: MapViewport | undefined): string {
+  return viewport ? `${viewport.bbox.join(",")}:${viewport.width}x${viewport.height}` : "default";
 }

@@ -4,24 +4,40 @@ import type { MapViewport } from "../domain/map-viewport.js";
 import type { EumetviewClient, SatelliteLayer } from "../infrastructure/eumetview.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
 import type { WindOverlayService } from "./wind-overlay-service.js";
+import { BoundedTtlCache } from "./bounded-ttl-cache.js";
 
 export interface SatelliteImageOptions {
   latitude: number;
   longitude: number;
   maxAgeMinutes: number;
   cacheMinutes: number;
+  cacheMaxEntries: number;
   timeZone: string;
 }
 
+interface CachedSatelliteImage {
+  data: Uint8Array;
+  contentType: "image/png";
+  filename: string;
+  caption: string;
+  source: string;
+  observedAt: Date;
+}
+
 export class SatelliteImageService {
-  private readonly cached = new Map<string, { attachment: ImageAttachment; cachedAt: Date }>();
+  private readonly cached: BoundedTtlCache<CachedSatelliteImage>;
 
   constructor(
     private readonly client: EumetviewClient,
     private readonly coastlineOverlay: CoastlineOverlayService,
     private readonly windOverlay: WindOverlayService,
     private readonly options: SatelliteImageOptions,
-  ) {}
+  ) {
+    this.cached = new BoundedTtlCache(
+      options.cacheMinutes * 60_000,
+      options.cacheMaxEntries,
+    );
+  }
 
   async getLatest(now = new Date(), viewport?: MapViewport): Promise<ImageAttachment> {
     return this.getLatestForLayer(this.selectLayer(now), now, true, viewport);
@@ -74,39 +90,37 @@ export class SatelliteImageService {
     includeMapContext = true,
     viewport?: MapViewport,
   ): Promise<ImageAttachment> {
-    const cacheKey = `${layer.name}:${includeMapContext ? "context" : "coastline"}:${viewport?.bbox.join(",") ?? "default"}`;
-    const cached = this.cached.get(cacheKey);
-    if (cached && now.getTime() - cached.cachedAt.getTime() < this.options.cacheMinutes * 60_000) {
-      return cached.attachment;
-    }
-    const client = viewport ? this.client.withViewport(viewport) : this.client;
-    const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
+    const cacheKey = `${layer.name}:${includeMapContext ? "context" : "coastline"}:${viewportKey(viewport)}`;
+    const cached = await this.cached.getOrLoad(cacheKey, now, async () => {
+      const client = viewport ? this.client.withViewport(viewport) : this.client;
+      const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
+      const metadata = await client.getLatestMetadata(layer);
+      const ageMinutes = (now.getTime() - metadata.observedAt.getTime()) / 60_000;
+      if (ageMinutes > this.options.maxAgeMinutes) {
+        throw new Error(`Latest EUMETSAT image is ${Math.round(ageMinutes)} minutes old`);
+      }
+      const image = await client.getImage(layer, metadata.observedAt);
+      return {
+        data: await coastlineOverlay.apply(
+          image.data,
+          await client.getCoastline(),
+          { includeMapContext },
+        ),
+        contentType: image.contentType,
+        filename: `eumetsat-${layer.mode}-${filenameTime(metadata.observedAt)}.png`,
+        caption: this.caption(layer, metadata.observedAt),
+        source: "EUMETSAT EUMETView",
+        observedAt: metadata.observedAt,
+      };
+    });
     const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
-    const metadata = await client.getLatestMetadata(layer);
-    const ageMinutes = (now.getTime() - metadata.observedAt.getTime()) / 60_000;
-    if (ageMinutes > this.options.maxAgeMinutes) {
-      throw new Error(`Latest EUMETSAT image is ${Math.round(ageMinutes)} minutes old`);
-    }
-    const image = await client.getImage(layer, metadata.observedAt);
-    const coastlined = await coastlineOverlay.apply(
-      image.data,
-      await client.getCoastline(),
-      { includeMapContext },
-    );
-    const data = includeMapContext
-      ? await windOverlay.apply(coastlined, metadata.observedAt)
-      : coastlined;
-    const attachment: ImageAttachment = {
+    return {
       kind: "image",
-      data,
-      contentType: image.contentType,
-      filename: `eumetsat-${layer.mode}-${filenameTime(metadata.observedAt)}.png`,
-      caption: this.caption(layer, metadata.observedAt),
-      source: "EUMETSAT EUMETView",
-      observedAt: metadata.observedAt,
+      ...cached,
+      data: includeMapContext
+        ? await windOverlay.apply(cached.data, cached.observedAt)
+        : cached.data,
     };
-    this.cached.set(cacheKey, { attachment, cachedAt: now });
-    return attachment;
   }
 
   private selectLayer(now: Date): SatelliteLayer {
@@ -133,4 +147,8 @@ export class SatelliteImageService {
 
 function filenameTime(date: Date): string {
   return date.toISOString().replaceAll(":", "-").replace(".000Z", "Z");
+}
+
+function viewportKey(viewport: MapViewport | undefined): string {
+  return viewport ? `${viewport.bbox.join(",")}:${viewport.width}x${viewport.height}` : "default";
 }

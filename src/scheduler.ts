@@ -11,6 +11,7 @@ export class Scheduler {
     scheduleTimes: string[],
     timeZone: string,
     private readonly retryMinutes: number,
+    private readonly recoveryHours: number,
     private readonly publications: PublicationService,
     private readonly delivery: DeliveryService,
     private readonly logger: Logger,
@@ -28,7 +29,8 @@ export class Scheduler {
     });
   }
 
-  start(): void {
+  async start(): Promise<void> {
+    await this.recoverMissedRun();
     for (const job of this.jobs) job.resume();
   }
 
@@ -47,8 +49,10 @@ export class Scheduler {
 
   private async execute(scheduledFor: Date, allowRetry: boolean): Promise<void> {
     try {
-      const publication = await this.publications.run({ kind: "scheduled", scheduledFor });
-      if (publication) await this.delivery.broadcast(publication);
+      const existing = await this.publications.getScheduled(scheduledFor);
+      const publication = existing ?? await this.publications.run({ kind: "scheduled", scheduledFor });
+      if (!publication) throw new Error("Collector is busy");
+      await this.delivery.broadcast(publication);
     } catch (error) {
       this.logger.error({ error, scheduledFor }, "Scheduled bulletin failed");
       if (!allowRetry) return;
@@ -60,5 +64,21 @@ export class Scheduler {
       this.retryTimers.add(timer);
       this.logger.info({ scheduledFor, retryMinutes: this.retryMinutes }, "Deferred retry scheduled");
     }
+  }
+
+  private async recoverMissedRun(now = new Date()): Promise<void> {
+    const latest = this.jobs
+      .flatMap((job) => job.previousRuns(1, now))
+      .sort((left, right) => right.getTime() - left.getTime())[0];
+    if (!latest) return;
+
+    const ageMs = now.getTime() - latest.getTime();
+    if (ageMs > this.recoveryHours * 60 * 60_000) {
+      this.logger.info({ scheduledFor: latest, recoveryHours: this.recoveryHours },
+        "Scheduled bulletin recovery skipped: last slot is too old");
+      return;
+    }
+    this.logger.info({ scheduledFor: latest }, "Recovering missed scheduled bulletin");
+    await this.execute(latest, true);
   }
 }

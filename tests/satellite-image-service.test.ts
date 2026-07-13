@@ -17,7 +17,7 @@ describe("SatelliteImageService", () => {
 
     expect(first.filename).toContain("day");
     expect(first.caption).toContain("EUMETSAT EUMETView");
-    expect(second).toBe(first);
+    expect(second.filename).toBe(first.filename);
     expect(client.getLatestMetadata).toHaveBeenCalledTimes(1);
     expect(client.getLatestMetadata).toHaveBeenCalledWith(dayLayer);
   });
@@ -58,6 +58,32 @@ describe("SatelliteImageService", () => {
     const service = createService(client);
     await expect(service.getLatest(new Date("2026-07-11T10:00:00Z"))).rejects.toThrow(/minutes old/u);
   });
+
+  it("caches the satellite base but redraws the current wind overlay", async () => {
+    const observedAt = new Date("2026-07-11T09:50:00Z");
+    const client = stubClient(observedAt);
+    const wind = { apply: vi.fn(async (image: Uint8Array) => image) };
+    const service = new SatelliteImageService(
+      client as never,
+      { apply: vi.fn(async (image: Uint8Array) => image) } as never,
+      wind as never,
+      {
+        latitude: 66,
+        longitude: 33,
+        maxAgeMinutes: 90,
+        cacheMinutes: 10,
+        cacheMaxEntries: 8,
+        timeZone: "Europe/Moscow",
+      },
+    );
+
+    const now = new Date("2026-07-11T10:00:00Z");
+    await service.getLatest(now);
+    await service.getLatest(new Date(now.getTime() + 60_000));
+
+    expect(client.getLatestMetadata).toHaveBeenCalledOnce();
+    expect(wind.apply).toHaveBeenCalledTimes(2);
+  });
 });
 
 function createService(client: ReturnType<typeof stubClient>) {
@@ -74,6 +100,7 @@ function createService(client: ReturnType<typeof stubClient>) {
       longitude: 33,
       maxAgeMinutes: 90,
       cacheMinutes: 10,
+      cacheMaxEntries: 8,
       timeZone: "Europe/Moscow",
     },
   );

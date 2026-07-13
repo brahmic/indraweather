@@ -44,6 +44,16 @@ export class PublicationService {
     return bulletin ? this.create(bulletin, viewport) : null;
   }
 
+  async getStored(bulletinId: string): Promise<Publication | null> {
+    const bulletin = await this.bulletins.getStored(bulletinId);
+    return bulletin ? this.create(bulletin) : null;
+  }
+
+  async getScheduled(scheduledFor: Date): Promise<Publication | null> {
+    const bulletin = await this.bulletins.getScheduled(scheduledFor);
+    return bulletin ? this.create(bulletin) : null;
+  }
+
   async getFreshDetails(): Promise<DetailsPublication> {
     const bulletin = await this.bulletins.getFreshOrRun();
     return {
@@ -150,7 +160,7 @@ export class PublicationService {
     }
     if (this.forecastMap) {
       try {
-        attachments.push(await this.forecastMap.get(bulletin.runId, bulletin.createdAt));
+        attachments.push(await this.forecastMap.get(bulletin.runId, bulletin.createdAt, viewport));
       } catch (error) {
         this.logger.warn({ error, bulletinId: bulletin.id }, "Forecast map is unavailable");
         text += "\n\nМодельная карта прогноза временно недоступна.";

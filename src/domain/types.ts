@@ -78,6 +78,7 @@ export interface ModelSummary {
   directionStartDeg: number | null;
   directionEndDeg: number | null;
   windChangeMs: number;
+  windChangeStartedAt: Date | null;
   windChangeAt: Date | null;
   precipitationMm: number;
   minVisibilityKm: number | null;
@@ -110,6 +111,7 @@ export interface BulletinSummary {
   horizonHours: number;
   directionChangeThresholdDeg: number;
   directionAgreementThresholdDeg: number;
+  eventTimeAgreementHours: number;
   pointSummaries: PointSummary[];
   agreement: ModelAgreement;
   overallMaxWindMs: number;

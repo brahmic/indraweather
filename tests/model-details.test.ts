@@ -11,7 +11,7 @@ describe("renderModelDetails", () => {
     expect(text).toContain("ECMWF: ветер 3–6 м/с");
     expect(text).toContain("GFS: ветер 5–9 м/с");
     expect(text).toContain("Расхождение: максимальный ветер 3 м/с, порывы 4 м/с");
-    expect(text).toContain("усиление на 3 м/с около 15:00 МСК");
+    expect(text).toContain("усиление на 3 м/с с 12:00 до 15:00 МСК");
   });
 
   it("fits five configured points into one Telegram message", () => {
@@ -35,6 +35,7 @@ function summary(pointSummaries: PointSummary[]): BulletinSummary {
     horizonHours: 24,
     directionChangeThresholdDeg: 45,
     directionAgreementThresholdDeg: 45,
+    eventTimeAgreementHours: 2,
     pointSummaries,
     agreement: {
       agreed: false,
@@ -89,6 +90,7 @@ function model(
     directionStartDeg,
     directionEndDeg,
     windChangeMs: 3,
+    windChangeStartedAt: new Date("2026-07-11T09:00:00Z"),
     windChangeAt: new Date("2026-07-11T12:00:00Z"),
     precipitationMm: modelName === "ecmwf" ? 1.2 : 3.8,
     minVisibilityKm: modelName === "ecmwf" ? 14 : 8,

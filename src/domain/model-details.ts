@@ -47,7 +47,10 @@ function renderModel(model: ModelSummary, timeZone: string): string {
   ];
   if (model.windChangeAt && model.windChangeMs !== 0) {
     const action = model.windChangeMs > 0 ? "усиление" : "ослабление";
-    parts.push(`${action} на ${formatNumber(Math.abs(model.windChangeMs))} м/с около ${formatTime(model.windChangeAt, timeZone)}`);
+    const timing = model.windChangeStartedAt
+      ? formatTimeRange(model.windChangeStartedAt, model.windChangeAt, timeZone)
+      : `около ${formatTime(model.windChangeAt, timeZone)}`;
+    parts.push(`${action} на ${formatNumber(Math.abs(model.windChangeMs))} м/с ${timing}`);
   }
   return parts.join("; ");
 }
@@ -109,6 +112,18 @@ function formatTime(date: Date, timeZone: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date)} МСК`;
+}
+
+function formatTimeRange(startedAt: Date, endedAt: Date, timeZone: string): string {
+  return `с ${formatClock(startedAt, timeZone)} до ${formatTime(endedAt, timeZone)}`;
+}
+
+function formatClock(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function formatNumber(value: number): string {

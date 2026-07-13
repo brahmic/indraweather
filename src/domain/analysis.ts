@@ -71,6 +71,7 @@ export function analyzeForecast(
     horizonHours: 24,
     directionChangeThresholdDeg: thresholds.directionChangeDeg,
     directionAgreementThresholdDeg: thresholds.directionAgreementDeg,
+    eventTimeAgreementHours: thresholds.eventTimeAgreementHours,
     pointSummaries,
     agreement: analyzeAgreement(pointSummaries, thresholds),
     overallMaxWindMs: max(pointSummaries.map((item) => item.maxWindMs)) ?? 0,
@@ -91,6 +92,7 @@ function summarizeModel(
   if (wind.length === 0) return null;
 
   let strongestChange = 0;
+  let windChangeStartedAt: Date | null = null;
   let windChangeAt: Date | null = null;
   for (let index = 3; index < wind.length; index += 1) {
     const previous = wind[index - 3];
@@ -99,11 +101,13 @@ function summarizeModel(
     const change = current.windSpeedMs - previous.windSpeedMs;
     if (Math.abs(change) > Math.abs(strongestChange)) {
       strongestChange = change;
+      windChangeStartedAt = previous.forecastAt;
       windChangeAt = current.forecastAt;
     }
   }
   if (Math.abs(strongestChange) < windChangeThresholdMs) {
     strongestChange = 0;
+    windChangeStartedAt = null;
     windChangeAt = null;
   }
 
@@ -120,6 +124,7 @@ function summarizeModel(
     directionStartDeg: firstDirection,
     directionEndDeg: lastDirection,
     windChangeMs: strongestChange,
+    windChangeStartedAt,
     windChangeAt,
     precipitationMm: sum(series.map((item) => item.precipitationMm)),
     minVisibilityKm: min(series.map((item) => item.visibilityKm)),

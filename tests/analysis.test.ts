@@ -37,6 +37,10 @@ describe("analyzeForecast", () => {
 
     expect(summary.overallMaxWindMs).toBe(7);
     expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeMs).toBe(5);
+    expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeStartedAt)
+      .toEqual(new Date("2026-07-11T01:00:00Z"));
+    expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeAt)
+      .toEqual(new Date("2026-07-11T04:00:00Z"));
     expect(summary.agreement.agreed).toBe(false);
     expect(summary.agreement.reasons).toContain("расходятся по силе ветра");
     expect(summary.agreement.reasons).toContain("расходятся по направлению");
@@ -53,6 +57,7 @@ describe("analyzeForecast", () => {
       directionAgreementDeg: 45,
       eventTimeAgreementHours: 2,
     });
+    expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeStartedAt).toBeNull();
     expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeAt).toBeNull();
   });
 });

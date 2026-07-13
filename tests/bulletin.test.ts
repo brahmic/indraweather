@@ -7,6 +7,7 @@ const summary: BulletinSummary = {
   horizonHours: 24,
   directionChangeThresholdDeg: 45,
   directionAgreementThresholdDeg: 45,
+  eventTimeAgreementHours: 2,
   pointSummaries: [{
     point: {
       id: "one",
@@ -26,6 +27,7 @@ const summary: BulletinSummary = {
         directionStartDeg: 270,
         directionEndDeg: 315,
         windChangeMs: 4,
+        windChangeStartedAt: new Date("2026-07-11T09:00:00Z"),
         windChangeAt: new Date("2026-07-11T12:00:00Z"),
         precipitationMm: 1,
         minVisibilityKm: 8,
@@ -169,6 +171,9 @@ describe("renderBulletin", () => {
             model: "gfs",
             directionStartDeg: 250,
             directionEndDeg: 320,
+            windChangeMs: 0,
+            windChangeStartedAt: null,
+            windChangeAt: null,
           },
         },
       })),
@@ -195,6 +200,70 @@ describe("renderBulletin", () => {
     });
 
     expect(result).toContain("Ветер: З 3–7 м/с · порывы до 10 м/с.\nПоворот: З → СЗ.");
+  });
+
+  it("adds agreed wind dynamics with a combined time interval to a control point", () => {
+    const compared: BulletinSummary = {
+      ...summary,
+      pointSummaries: summary.pointSummaries.map((point) => ({
+        ...point,
+        models: {
+          ecmwf: point.models.ecmwf!,
+          gfs: {
+            ...point.models.ecmwf!,
+            model: "gfs",
+            windChangeMs: 3,
+            windChangeStartedAt: new Date("2026-07-11T10:00:00Z"),
+            windChangeAt: new Date("2026-07-11T13:00:00Z"),
+          },
+        },
+      })),
+    };
+    const result = renderBulletin({
+      summary: compared,
+      warnings: [],
+      tides: [],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain("Динамика: усиление на 3–4 м/с с 12:00 до 16:00 МСК.");
+  });
+
+  it("omits wind dynamics when models predict opposite changes", () => {
+    const compared: BulletinSummary = {
+      ...summary,
+      pointSummaries: summary.pointSummaries.map((point) => ({
+        ...point,
+        models: {
+          ecmwf: point.models.ecmwf!,
+          gfs: {
+            ...point.models.ecmwf!,
+            model: "gfs",
+            windChangeMs: -3,
+          },
+        },
+      })),
+    };
+    const result = renderBulletin({
+      summary: compared,
+      warnings: [],
+      tides: [],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).not.toContain("Динамика:");
   });
 
   it("does not show a combined direction when models disagree at a point", () => {

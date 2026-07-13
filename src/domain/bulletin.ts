@@ -72,6 +72,7 @@ export function renderBulletin(input: BulletinInput): string {
   for (const point of input.summary.pointSummaries) {
     const gust = point.maxGustMs === null ? "нет данных" : `до ${round(point.maxGustMs)} м/с`;
     const wind = renderPointWind(point, input.summary);
+    const dynamics = renderPointWindDynamics(point, input.summary, input.timeZone);
     const extras: string[] = [];
     if (point.precipitationMm >= 0.1) extras.push(`осадки ${formatNumber(point.precipitationMm)} мм`);
     if (point.minVisibilityKm !== null && point.minVisibilityKm < 10) {
@@ -88,6 +89,7 @@ export function renderBulletin(input: BulletinInput): string {
       point.point.name,
       wind.text(point.minWindMs, point.maxWindMs, gust),
     );
+    if (dynamics) lines.push(`Динамика: ${dynamics}.`);
     if (wind.turn) lines.push(`Поворот: ${wind.turn}.`);
     if (wind.directionUnavailable) lines.push("Направление: модели расходятся.");
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
@@ -203,6 +205,37 @@ function averageDirection(left: number, right: number): number {
   return Math.atan2(y, x) * 180 / Math.PI;
 }
 
+function renderPointWindDynamics(
+  point: BulletinSummary["pointSummaries"][number],
+  summary: BulletinSummary,
+  timeZone: string,
+): string | null {
+  const ecmwf = point.models.ecmwf;
+  const gfs = point.models.gfs;
+  if (!ecmwf || !gfs
+    || ecmwf.windChangeMs === 0 || gfs.windChangeMs === 0
+    || !ecmwf.windChangeStartedAt || !gfs.windChangeStartedAt
+    || !ecmwf.windChangeAt || !gfs.windChangeAt) {
+    return null;
+  }
+  if (Math.sign(ecmwf.windChangeMs) !== Math.sign(gfs.windChangeMs)) return null;
+
+  const endDifferenceHours = Math.abs(ecmwf.windChangeAt.getTime() - gfs.windChangeAt.getTime())
+    / 3_600_000;
+  const startDifferenceHours = Math.abs(
+    ecmwf.windChangeStartedAt.getTime() - gfs.windChangeStartedAt.getTime(),
+  ) / 3_600_000;
+  if (endDifferenceHours > summary.eventTimeAgreementHours
+    || startDifferenceHours > summary.eventTimeAgreementHours) return null;
+
+  const minimum = Math.min(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
+  const maximum = Math.max(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
+  const startedAt = new Date(Math.min(ecmwf.windChangeStartedAt.getTime(), gfs.windChangeStartedAt.getTime()));
+  const endedAt = new Date(Math.max(ecmwf.windChangeAt.getTime(), gfs.windChangeAt.getTime()));
+  const action = ecmwf.windChangeMs > 0 ? "усиление" : "ослабление";
+  return `${action} на ${formatRange(minimum, maximum)} м/с ${formatTimeRange(startedAt, endedAt, timeZone)}`;
+}
+
 function renderOutlook(summary: BulletinSummary): string {
   if (summary.outlook.maxWindMs === null) return "данных недостаточно";
   const gust = summary.outlook.maxGustMs === null
@@ -226,7 +259,10 @@ function renderMainChange(summary: BulletinSummary, timeZone: string): string {
     return `${modelLabel(windiest.model.model)}: наибольший ветер ожидается у точки «${windiest.point.name}» — до ${round(windiest.model.maxWindMs)} м/с.`;
   }
   const action = strongest.model.windChangeMs > 0 ? "усиление" : "ослабление";
-  return `${modelLabel(strongest.model.model)}: ${action} ветра у точки «${strongest.point}» около ${formatTime(strongest.model.windChangeAt, timeZone)}.`;
+  const timing = strongest.model.windChangeStartedAt
+    ? formatTimeRange(strongest.model.windChangeStartedAt, strongest.model.windChangeAt, timeZone)
+    : `около ${formatTime(strongest.model.windChangeAt, timeZone)}`;
+  return `${modelLabel(strongest.model.model)}: ${action} ветра у точки «${strongest.point}» ${timing}.`;
 }
 
 function renderAgreement(summary: BulletinSummary): string {
@@ -323,6 +359,18 @@ function formatTime(date: Date, timeZone: string): string {
   }).format(date)} МСК`;
 }
 
+function formatTimeRange(startedAt: Date, endedAt: Date, timeZone: string): string {
+  return `с ${formatClock(startedAt, timeZone)} до ${formatTime(endedAt, timeZone)}`;
+}
+
+function formatClock(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function formatDuration(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -336,6 +384,12 @@ function round(value: number): number {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(value);
+}
+
+function formatRange(minimum: number, maximum: number): string {
+  const formattedMinimum = formatNumber(minimum);
+  const formattedMaximum = formatNumber(maximum);
+  return formattedMinimum === formattedMaximum ? formattedMinimum : `${formattedMinimum}–${formattedMaximum}`;
 }
 
 function formatSigned(value: number): string {

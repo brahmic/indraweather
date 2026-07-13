@@ -248,7 +248,7 @@ export class MaxChannel implements DeliveryChannel {
         await this.sendWeather(sender.user_id);
         break;
       case "update":
-        if (!this.canForceUpdate(sender.user_id)) {
+        if (!await this.canForceUpdate(sender.user_id)) {
           this.logger.warn({ userId: sender.user_id }, "Unauthorized MAX manual update request");
           await this.api.sendMessage(sender.user_id, "Команда недоступна.");
           break;
@@ -591,8 +591,10 @@ export class MaxChannel implements DeliveryChannel {
     }
   }
 
-  private canForceUpdate(userId: number): boolean {
-    return this.config.manualUpdate.maxRecipientIds.includes(String(userId));
+  private async canForceUpdate(userId: number): Promise<boolean> {
+    const allowed = this.config.manualUpdate.maxRecipientIds;
+    if (allowed.length > 0) return allowed.includes(String(userId));
+    return this.database.claimManualUpdateOwner(this.id, String(userId));
   }
 
   private mapKeyboard(): MaxMessageAttachment {

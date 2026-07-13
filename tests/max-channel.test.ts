@@ -164,7 +164,7 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
-  it("forces a new bulletin only for an allowlisted MAX recipient", async () => {
+  it("lets the first MAX /update sender claim the command owner", async () => {
     const database = databaseStub();
     database.claimMaxWebhook
       .mockResolvedValueOnce({
@@ -185,7 +185,7 @@ describe("MaxChannel", () => {
       [],
       {
         ...appConfig(),
-        manualUpdate: { telegramRecipientIds: [], maxRecipientIds: ["42"] },
+        manualUpdate: { telegramRecipientIds: [], maxRecipientIds: [] },
       } as never,
       api,
       { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
@@ -198,6 +198,7 @@ describe("MaxChannel", () => {
       { kind: "manual" },
       expect.objectContaining({ bbox: [30, 64, 36, 68] }),
     );
+    expect(database.claimManualUpdateOwner).toHaveBeenCalledWith("max", "42");
     expect(api.deleteMessage).toHaveBeenCalledOnce();
     await channel.stop();
   });
@@ -701,6 +702,7 @@ function databaseStub() {
     subscribe: vi.fn(async () => undefined),
     unsubscribe: vi.fn(async () => undefined),
     getActiveRecipientIds: vi.fn(async () => [] as string[]),
+    claimManualUpdateOwner: vi.fn(async () => true),
     claimDelivery: vi.fn(async () => false),
     markDelivery: vi.fn(async () => undefined),
     getLastSuccessfulUpdate: vi.fn(async () => null),

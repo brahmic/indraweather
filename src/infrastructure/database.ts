@@ -557,6 +557,20 @@ export class Database {
     return result.rows.map((row) => row.recipient_id);
   }
 
+  async claimManualUpdateOwner(channel: "telegram" | "max", recipientId: string): Promise<boolean> {
+    const claimed = await this.pool.query<{ recipient_id: string }>(`
+      INSERT INTO manual_update_owners (channel, recipient_id)
+      VALUES ($1, $2)
+      ON CONFLICT (channel) DO NOTHING
+      RETURNING recipient_id
+    `, [channel, recipientId]);
+    if (claimed.rows[0]) return true;
+    const owner = await this.pool.query<{ recipient_id: string }>(`
+      SELECT recipient_id FROM manual_update_owners WHERE channel = $1
+    `, [channel]);
+    return owner.rows[0]?.recipient_id === recipientId;
+  }
+
   async getMapViewport(channel: string, recipientId: string): Promise<StoredMapViewport | null> {
     const result = await this.pool.query<{
       west: number;

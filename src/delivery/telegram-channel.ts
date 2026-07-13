@@ -94,7 +94,11 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("update", async (ctx) => {
-      if (!this.canForceUpdate(ctx.chat.id)) {
+      if (ctx.chat.type !== "private") {
+        await ctx.reply("Команда доступна только в личном чате.");
+        return;
+      }
+      if (!await this.canForceUpdate(ctx.chat.id)) {
         this.logger.warn({ chatId: ctx.chat.id }, "Unauthorized Telegram manual update request");
         await ctx.reply("Команда недоступна.");
         return;
@@ -475,8 +479,10 @@ export class TelegramChannel implements DeliveryChannel {
     }
   }
 
-  private canForceUpdate(chatId: number): boolean {
-    return this.config.manualUpdate.telegramRecipientIds.includes(String(chatId));
+  private async canForceUpdate(chatId: number): Promise<boolean> {
+    const allowed = this.config.manualUpdate.telegramRecipientIds;
+    if (allowed.length > 0) return allowed.includes(String(chatId));
+    return this.database.claimManualUpdateOwner(this.id, String(chatId));
   }
 
   private mapKeyboard(): InlineKeyboard {

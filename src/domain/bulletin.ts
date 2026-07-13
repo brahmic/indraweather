@@ -33,6 +33,7 @@ export interface BulletinInput {
 
 export function renderBulletin(input: BulletinInput): string {
   const generatedAt = new Date(input.summary.generatedAt);
+  const marineByPointId = new Map(input.marine.map((marine) => [marine.point.id, marine]));
   const lines: string[] = [
     "Кемь — Кандалакша · гидрометеосводка",
     `Сформировано: ${formatDateTime(generatedAt, input.timeZone)} · прогноз на ${input.summary.horizonHours} часа`,
@@ -87,16 +88,8 @@ export function renderBulletin(input: BulletinInput): string {
       `Ветер ${round(point.minWindMs)}–${round(point.maxWindMs)} м/с · порывы ${gust}.`,
     );
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
-  }
-
-  lines.push("", "Волна и вода");
-  if (input.marine.length === 0) {
-    lines.push(input.marineSourceUnavailable
-      ? "Морская модель временно недоступна."
-      : "Данных морской модели недостаточно.");
-  } else {
-    lines.push("Прогноз морской модели; в губах, за островами и у берега условия могут отличаться.");
-    for (const marine of input.marine) lines.push(renderMarine(marine));
+    const marine = marineByPointId.get(point.point.id);
+    lines.push(marine ? `Море: ${renderMarine(marine)}.` : "Море: нет данных.");
   }
 
   lines.push(
@@ -113,6 +106,7 @@ export function renderBulletin(input: BulletinInput): string {
   if (input.nextScheduledAt) {
     lines.push(`Следующий выпуск: ${formatDateTime(input.nextScheduledAt, input.timeZone)}.`);
   }
+  lines.push(renderMarineFooter(input));
   lines.push(
     "",
     "Источники",
@@ -137,7 +131,16 @@ function renderMarine(summary: MarinePointSummary): string {
   if (summary.seaSurfaceTemperatureC !== null) {
     components.push(`вода ${formatSigned(summary.seaSurfaceTemperatureC)} °C`);
   }
-  return `${summary.point.name}: ${components.join("; ")}.`;
+  return components.join("; ");
+}
+
+function renderMarineFooter(input: BulletinInput): string {
+  if (input.marine.length > 0) {
+    return "Прогноз морской модели: в губах, за островами и у берега условия могут отличаться.";
+  }
+  return input.marineSourceUnavailable
+    ? "Морская модель временно недоступна."
+    : "Данных морской модели недостаточно.";
 }
 
 function formatPeriod(minimum: number | null, maximum: number | null): string {

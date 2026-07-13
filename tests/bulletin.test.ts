@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderBulletin, windDirectionLabel } from "../src/domain/bulletin.js";
-import type { BulletinSummary } from "../src/domain/types.js";
+import type { BulletinSummary, MarinePointSummary } from "../src/domain/types.js";
 
 const summary: BulletinSummary = {
   generatedAt: "2026-07-11T05:00:00.000Z",
@@ -50,6 +50,20 @@ const summary: BulletinSummary = {
   overallMaxWindMs: 7,
   overallMaxGustMs: 10,
   outlook: { maxWindMs: 5, maxGustMs: 8 },
+};
+
+const marine: MarinePointSummary = {
+  point: summary.pointSummaries[0]!.point,
+  minWaveHeightM: 0.3,
+  maxWaveHeightM: 0.7,
+  waveDirectionDeg: 45,
+  minWavePeriodSeconds: 3,
+  maxWavePeriodSeconds: 5,
+  maxWindWaveHeightM: 0.4,
+  maxSwellHeightM: 0.2,
+  maxCurrentKnots: 0.3,
+  currentDirectionDeg: 90,
+  seaSurfaceTemperatureC: 8,
 };
 
 describe("renderBulletin", () => {
@@ -119,6 +133,25 @@ describe("renderBulletin", () => {
     });
 
     expect(result).toContain("Согласованность: существенные расхождения — сила ветра, порывы.");
+  });
+
+  it("adds marine conditions to each control point and keeps its disclaimer in the issue footer", () => {
+    const result = renderBulletin({
+      summary,
+      warnings: [],
+      tides: [],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [marine],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain("Точка <1>\nВетер 3–7 м/с · порывы до 10 м/с.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.");
+    expect(result).not.toContain("\nВолна и вода\n");
+    expect(result).toContain("Выпуск\nИзменение: нет предыдущего планового выпуска для сравнения.\nПрогноз морской модели: в губах, за островами и у берега условия могут отличаться.");
   });
 });
 

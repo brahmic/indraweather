@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, loadControlPoints } from "../src/config.js";
 
 describe("loadConfig", () => {
+  it("loads Pongoma and Bolshoy Robyak as active control points", async () => {
+    const points = await loadControlPoints();
+
+    expect(points).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "pongoma",
+        name: "Поньгома",
+        latitude: 65.3446,
+        longitude: 34.409,
+        active: true,
+      }),
+      expect.objectContaining({
+        id: "bolshoy-robyak",
+        name: "Остров Большой Робьяк",
+        latitude: 65.6256,
+        longitude: 34.9084,
+        active: true,
+      }),
+    ]));
+  });
+
   it("builds an encoded PostgreSQL URL from Docker connection fields", () => {
     const config = loadConfig({
       DATABASE_HOST: "postgres",

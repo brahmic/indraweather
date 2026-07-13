@@ -9,12 +9,30 @@
     "active": true
   },
   {
+    "id": "pongoma",
+    "name": "Поньгома",
+    "shortName": "Поньгома",
+    "latitude": 65.3446,
+    "longitude": 34.409,
+    "order": 15,
+    "active": true
+  },
+  {
     "id": "kuzema-bay",
     "name": "Куземская губа",
     "shortName": "Кузема",
     "latitude": 65.511,
     "longitude": 33.335,
     "order": 20,
+    "active": true
+  },
+  {
+    "id": "bolshoy-robyak",
+    "name": "Остров Большой Робьяк",
+    "shortName": "Робьяк",
+    "latitude": 65.6256,
+    "longitude": 34.9084,
+    "order": 25,
     "active": true
   },
   {

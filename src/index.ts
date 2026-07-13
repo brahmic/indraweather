@@ -324,6 +324,8 @@ const lightning = config.lightning
       cacheMaxEntries: config.imageCacheMaxEntries,
       timeZone: config.timeZone,
     },
+    satellite,
+    logger,
   )
   : null;
 const forecastMap = new ForecastMapService(

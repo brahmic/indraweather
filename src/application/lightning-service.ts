@@ -4,8 +4,10 @@ import type { MapViewport } from "../domain/map-viewport.js";
 import type { ControlPoint } from "../domain/types.js";
 import type { EumetsatLightningClient, LightningFlash } from "../infrastructure/eumetsat-lightning.js";
 import type { EumetviewClient } from "../infrastructure/eumetview.js";
+import type { Logger } from "../logger.js";
 import { BoundedTtlCache } from "./bounded-ttl-cache.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
+import type { SatelliteImageService } from "./satellite-image-service.js";
 
 export interface LightningServiceOptions {
   bbox: [number, number, number, number];
@@ -23,6 +25,11 @@ interface CachedLightning {
   fetchedAt: Date;
 }
 
+interface LightningBackground {
+  data: Uint8Array;
+  satelliteObservedAt: Date | null;
+}
+
 export class LightningService {
   private readonly cached: BoundedTtlCache<CachedLightning>;
 
@@ -32,6 +39,8 @@ export class LightningService {
     private readonly coastlineSource: EumetviewClient,
     private readonly points: readonly ControlPoint[],
     private readonly options: LightningServiceOptions,
+    private readonly satellite: SatelliteImageService | null = null,
+    private readonly logger: Pick<Logger, "warn"> = { warn: () => undefined },
   ) {
     this.cached = new BoundedTtlCache(
       options.cacheMinutes * 60_000,
@@ -46,24 +55,62 @@ export class LightningService {
     const now = new Date();
     const start = new Date(now.getTime() - options.windowMinutes * 60_000);
     const key = `lightning:${viewportKey(viewport)}`;
-    const cached = await this.cached.getOrLoad(key, now, async () => ({
-      flashes: await this.client.getFlashes(start, now, options.bbox),
-      fetchedAt: new Date(),
-    }));
-    const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
-    const coastlineSource = viewport ? this.coastlineSource.withViewport(viewport) : this.coastlineSource;
-    const base = await this.createBase(options);
-    const map = await coastline.apply(base, await coastlineSource.getCoastline());
-    const data = await this.addFlashes(map, cached.flashes, cached.fetchedAt, options);
+    const [cached, background] = await Promise.all([
+      this.cached.getOrLoad(key, now, async () => ({
+        flashes: await this.client.getFlashes(start, now, options.bbox),
+        fetchedAt: new Date(),
+      })),
+      this.getBackground(now, viewport, options),
+    ]);
+    const data = await this.addFlashes(
+      background.data,
+      cached.flashes,
+      cached.fetchedAt,
+      options,
+      background.satelliteObservedAt,
+    );
     return {
       kind: "image",
       data,
       contentType: "image/png",
       filename: `lightning-${filenameTime(cached.fetchedAt)}.png`,
-      caption: this.caption(cached.flashes, cached.fetchedAt, options),
-      source: "EUMETSAT MTG Lightning Imager (LI), LI Lightning Flashes",
+      caption: this.caption(cached.flashes, cached.fetchedAt, options, background.satelliteObservedAt),
+      source: background.satelliteObservedAt
+        ? "EUMETSAT MTG Lightning Imager (LI); satellite background: EUMETView"
+        : "EUMETSAT MTG Lightning Imager (LI), LI Lightning Flashes",
       observedAt: cached.fetchedAt,
     };
+  }
+
+  private async getBackground(
+    now: Date,
+    viewport: MapViewport | undefined,
+    options: LightningServiceOptions,
+  ): Promise<LightningBackground> {
+    if (this.satellite) {
+      try {
+        const image = await this.satellite.getLatest(now, viewport);
+        return {
+          data: await this.dimSatellite(image.data, options),
+          satelliteObservedAt: image.observedAt,
+        };
+      } catch (error) {
+        this.logger.warn({ err: error }, "Lightning satellite background unavailable; using cartographic fallback");
+      }
+    }
+
+    const base = await this.createBase(options);
+    const coastline = viewport ? this.coastline.withViewport(viewport) : this.coastline;
+    const coastlineSource = viewport ? this.coastlineSource.withViewport(viewport) : this.coastlineSource;
+    try {
+      return {
+        data: await coastline.apply(base, await coastlineSource.getCoastline()),
+        satelliteObservedAt: null,
+      };
+    } catch (error) {
+      this.logger.warn({ err: error }, "Lightning coastline background unavailable; using grid fallback");
+      return { data: base, satelliteObservedAt: null };
+    }
   }
 
   private async createBase(options: LightningServiceOptions): Promise<Uint8Array> {
@@ -78,13 +125,27 @@ export class LightningService {
     return new Uint8Array(await sharp(Buffer.from(svg)).png().toBuffer());
   }
 
+  private async dimSatellite(image: Uint8Array, options: LightningServiceOptions): Promise<Uint8Array> {
+    const overlay = `<svg xmlns="http://www.w3.org/2000/svg" width="${options.width}" height="${options.height}">
+      <rect width="100%" height="100%" fill="#07151c" fill-opacity="0.32"/>
+    </svg>`;
+    return new Uint8Array(await sharp(image)
+      .composite([{ input: Buffer.from(overlay) }])
+      .png()
+      .toBuffer());
+  }
+
   private async addFlashes(
     image: Uint8Array,
     flashes: readonly LightningFlash[],
     fetchedAt: Date,
     options: LightningServiceOptions,
+    satelliteObservedAt: Date | null,
   ): Promise<Uint8Array> {
     const time = formatTime(fetchedAt, options.timeZone);
+    const backgroundTime = satelliteObservedAt
+      ? `Спутник ${formatTime(satelliteObservedAt, options.timeZone)} МСК · LI ${time} МСК`
+      : `Вспышки MTG Lightning Imager · ${time} МСК`;
     const points = flashes.map((flash) => this.renderFlash(flash, fetchedAt, options)).join("\n");
     const empty = flashes.length === 0
       ? `<text x="24" y="76" fill="#e6f1f4" font-family="Noto Sans, sans-serif" font-size="15" font-weight="600">За последние ${options.windowMinutes} мин вспышек в этом охвате не зарегистрировано</text>`
@@ -101,7 +162,7 @@ export class LightningService {
       <g>
         <rect x="12" y="12" width="470" height="40" rx="3" fill="#101820" fill-opacity="0.88"/>
         <text x="24" y="29" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="14" font-weight="700">ГРОЗОВАЯ АКТИВНОСТЬ · ПОСЛЕДНИЕ ${options.windowMinutes} МИН</text>
-        <text x="24" y="45" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="12">Вспышки MTG Lightning Imager · ${time} МСК</text>
+        <text x="24" y="45" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="12">${backgroundTime}</text>
       </g>
       ${empty}
       ${points}
@@ -133,16 +194,20 @@ export class LightningService {
     flashes: readonly LightningFlash[],
     fetchedAt: Date,
     options: LightningServiceOptions,
+    satelliteObservedAt: Date | null,
   ): string {
     const header = `Кемь — Кандалакша · вспышки за последние ${options.windowMinutes} мин · ${formatTime(fetchedAt, options.timeZone)} МСК`;
+    const background = satelliteObservedAt
+      ? `\nСпутниковая подложка: EUMETView · ${formatTime(satelliteObservedAt, options.timeZone)} МСК.`
+      : "\nСпутниковая подложка временно недоступна: показана карта берегов.";
     if (flashes.length === 0) {
-      return `${header}\nВспышек в текущем охвате не зарегистрировано.\nИсточник: EUMETSAT MTG Lightning Imager (LI).`;
+      return `${header}\nВспышек в текущем охвате не зарегистрировано.${background}\nИсточник: EUMETSAT MTG Lightning Imager (LI).`;
     }
     const nearest = nearestControlPoint(flashes, this.points);
     const nearestText = nearest
       ? ` Ближайшая к ${nearest.point.shortName}: ${Math.round(nearest.distanceKm)} км, ${formatTime(nearest.flash.observedAt, options.timeZone)} МСК.`
       : "";
-    return `${header}\nЗарегистрировано вспышек: ${flashes.length}.${nearestText}\nИсточник: EUMETSAT MTG Lightning Imager (LI). Это спутниковые оптические вспышки, не точные наземные удары.`;
+    return `${header}\nЗарегистрировано вспышек: ${flashes.length}.${nearestText}${background}\nИсточник: EUMETSAT MTG Lightning Imager (LI). Это спутниковые оптические вспышки, не точные наземные удары.`;
   }
 }
 

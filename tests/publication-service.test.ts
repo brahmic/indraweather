@@ -54,7 +54,7 @@ describe("formatDetailedSatellitePartial", () => {
 });
 
 describe("PublicationService", () => {
-  it("adds a details command to weather publications", async () => {
+  it("leaves detail actions to delivery channels", async () => {
     const service = new PublicationService(
       {
         getFreshOrRun: async () => ({
@@ -78,7 +78,8 @@ describe("PublicationService", () => {
 
     const publication = await service.getFreshOrRun();
 
-    expect(publication.text).toBe("weather\n\nПодробности по моделям:\n/details");
+    expect(publication.text).toBe("weather");
+    expect(publication.text).not.toContain("/details");
   });
 
   it("returns the current cloud diagnostic together with its separate animation", async () => {

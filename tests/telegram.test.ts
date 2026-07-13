@@ -153,6 +153,12 @@ describe("TelegramChannel /weather", () => {
       "deleteMessage",
     ]);
     expect(calls[0]?.body.text).toContain("Собираю прогноз");
+    expect(calls[2]?.body.reply_markup).toEqual(expect.objectContaining({
+      inline_keyboard: [[
+        expect.objectContaining({ callback_data: "bulletin:details" }),
+        expect.objectContaining({ callback_data: "bulletin:clouds" }),
+      ]],
+    }));
     expect(publications.getFreshOrRun).toHaveBeenCalledOnce();
   });
 });

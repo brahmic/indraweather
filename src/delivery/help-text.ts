@@ -8,6 +8,7 @@ export function formatHelpHtml(scheduleTimes: string[], subscriptionEnabled = fa
     "",
     "<b>Прогноз</b>",
     "<code>/weather</code> — актуальная сводка, снимки и условия на маршруте.",
+    "Под бюллетенем доступны кнопки «Детали» и «Облака».",
     "<code>/details</code> — ECMWF и GFS по отдельности.",
     "<code>/forecast</code> — выбрать точку и получить прогноз на 5 дней с отдельными ECMWF и GFS.",
     "Диапазоны в сводке показывают границы моделей, а не среднее значение.",

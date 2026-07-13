@@ -209,6 +209,12 @@ export class MaxChannel implements DeliveryChannel {
     if (update.update_type === "message_callback") {
       if (parseMapAction(update.callback.payload)) {
         await this.processMapCallback(update.callback.callback_id, update.callback.payload, update.callback.user.user_id);
+      } else if (parseBulletinAction(update.callback.payload)) {
+        await this.processBulletinCallback(
+          update.callback.callback_id,
+          update.callback.payload,
+          update.callback.user.user_id,
+        );
       } else {
         await this.processPointForecastCallback(
           update.callback.callback_id,
@@ -237,7 +243,7 @@ export class MaxChannel implements DeliveryChannel {
         await this.sendWeather(sender.user_id);
         break;
       case "details":
-        await this.sendText(sender.user_id, await this.publications.getFreshDetails());
+        await this.sendDetails(sender.user_id);
         break;
       case "forecast":
         await this.sendPointForecastPicker(sender.user_id);
@@ -298,6 +304,15 @@ export class MaxChannel implements DeliveryChannel {
     if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", userId, map.viewport);
   }
 
+  private async sendDetails(userId: number): Promise<void> {
+    try {
+      await this.sendText(userId, await this.publications.getFreshDetails());
+    } catch (error) {
+      this.logger.error({ error }, "MAX detailed model bulletin failed");
+      await this.api.sendMessage(userId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");
+    }
+  }
+
   private async sendMap(userId: number): Promise<void> {
     try {
       const viewport = (await this.getMapSelection(userId)).viewport;
@@ -343,6 +358,21 @@ export class MaxChannel implements DeliveryChannel {
       this.logger.error({ error, pointId }, "MAX point forecast request failed");
       await this.api.sendMessage(userId, "Не удалось подготовить пятидневный прогноз. Попробуйте ещё раз через минуту.");
     }
+  }
+
+  private async processBulletinCallback(
+    callbackId: string,
+    payload: string | undefined,
+    userId: number,
+  ): Promise<void> {
+    const action = parseBulletinAction(payload);
+    if (!action) {
+      await this.api.answerCallback(callbackId, undefined, "Кнопка больше не актуальна.");
+      return;
+    }
+    await this.api.answerCallback(callbackId);
+    if (action === "details") await this.sendDetails(userId);
+    else await this.sendClouds(userId);
   }
 
   private async processMapCallback(
@@ -453,6 +483,18 @@ export class MaxChannel implements DeliveryChannel {
             payload: `forecast:${point.id}`,
           })),
         ),
+      },
+    };
+  }
+
+  private bulletinKeyboard(): MaxMessageAttachment {
+    return {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [[
+          { type: "callback", text: "🔬 Детали", payload: "bulletin:details" },
+          { type: "callback", text: "☁️ Облака", payload: "bulletin:clouds" },
+        ]],
       },
     };
   }
@@ -571,18 +613,24 @@ export class MaxChannel implements DeliveryChannel {
         [item.attachment],
       ));
     }
-    messageIds.push(...await this.sendText(userId, publication.text));
+    messageIds.push(...await this.sendText(userId, publication.text, this.bulletinKeyboard()));
     return messageIds;
   }
 
-  private async sendText(userId: number, content: string): Promise<string[]> {
+  private async sendText(
+    userId: number,
+    content: string,
+    replyMarkup?: MaxMessageAttachment,
+  ): Promise<string[]> {
     const chunks = splitText(content, 3400);
     const messageIds: string[] = [];
     for (const [index, chunk] of chunks.entries()) {
-      messageIds.push(await this.api.sendMessage(
-        userId,
-        formatPostHtml(chunk, this.points.map((point) => point.name), index === 0),
-      ));
+      const text = formatPostHtml(chunk, this.points.map((point) => point.name), index === 0);
+      if (replyMarkup && index === chunks.length - 1) {
+        messageIds.push(await this.api.sendMessage(userId, text, [replyMarkup]));
+      } else {
+        messageIds.push(await this.api.sendMessage(userId, text));
+      }
     }
     return messageIds;
   }
@@ -625,6 +673,12 @@ function parseMapAction(payload: string | undefined): MapViewportAction | null {
 function parsePointForecastId(payload: string | undefined): string | null {
   const match = /^forecast:([a-z0-9-]+)$/u.exec(payload ?? "");
   return match?.[1] ?? null;
+}
+
+function parseBulletinAction(payload: string | undefined): "details" | "clouds" | null {
+  return payload === "bulletin:details" || payload === "bulletin:clouds"
+    ? payload.slice("bulletin:".length) as "details" | "clouds"
+    : null;
 }
 
 function parseRecipientId(value: string): number {

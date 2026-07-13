@@ -147,7 +147,17 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-weather"));
 
-    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("weather"));
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("weather"), [
+      expect.objectContaining({
+        type: "inline_keyboard",
+        payload: {
+          buttons: [[
+            expect.objectContaining({ payload: "bulletin:details" }),
+            expect.objectContaining({ payload: "bulletin:clouds" }),
+          ]],
+        },
+      }),
+    ]);
     expect(api.editMessage).not.toHaveBeenCalled();
     await channel.stop();
   });
@@ -244,6 +254,46 @@ describe("MaxChannel", () => {
     });
     expect(publications.getPointForecast).toHaveBeenCalledWith("umba");
     expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>Прогноз на 5 дней · Умба</b>"));
+    await channel.stop();
+  });
+
+  it("opens model details from a bulletin callback", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-bulletin-details",
+        attempts: 1,
+        payload: {
+          update_type: "message_callback",
+          timestamp: 1,
+          callback: {
+            timestamp: 1,
+            callback_id: "callback-details",
+            payload: "bulletin:details",
+            user: { user_id: 42, is_bot: false },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = { getFreshDetails: vi.fn(async () => "details") };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-bulletin-details"));
+
+    expect(api.answerCallback).toHaveBeenCalledWith("callback-details");
+    expect(publications.getFreshDetails).toHaveBeenCalledOnce();
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>details</b>"));
     await channel.stop();
   });
 

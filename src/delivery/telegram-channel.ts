@@ -105,13 +105,7 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("details", async (ctx) => {
-      await ctx.replyWithChatAction("typing");
-      try {
-        await this.sendContent(String(ctx.chat.id), await this.publications.getFreshDetails());
-      } catch (error) {
-        this.logger.error({ error }, "Detailed model bulletin failed");
-        await ctx.reply("Не удалось сформировать детализацию: погодные данные временно недоступны.");
-      }
+      await this.sendDetails(ctx.chat.id);
     });
 
     this.bot.command("forecast", async (ctx) => {
@@ -140,13 +134,7 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("clouds", async (ctx) => {
-      const map = await this.getMapSelection(String(ctx.chat.id));
-      const sent = await this.sendDiagnostic(
-        ctx.chat.id,
-        async () => this.publications.getClouds(map.viewport, !map.isCustom),
-        "Диагностический снимок облаков временно недоступен.",
-      );
-      if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", String(ctx.chat.id), map.viewport);
+      await this.sendClouds(ctx.chat.id);
     });
 
     this.bot.command("radar", async (ctx) => {
@@ -231,6 +219,17 @@ export class TelegramChannel implements DeliveryChannel {
       }
     });
 
+    this.bot.callbackQuery(/^bulletin:(details|clouds)$/u, async (ctx) => {
+      const action = ctx.match[1];
+      if (!ctx.chat) {
+        await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (action === "details") await this.sendDetails(ctx.chat.id);
+      else await this.sendClouds(ctx.chat.id);
+    });
+
     this.bot.catch((error) => {
       const cause = error.error;
       if (cause instanceof GrammyError) {
@@ -278,7 +277,7 @@ export class TelegramChannel implements DeliveryChannel {
     for (const attachment of publication.attachments) {
       messages.push(await this.sendAttachment(recipientId, attachment));
     }
-    messages.push(...await this.sendContent(recipientId, publication.text));
+    messages.push(...await this.sendContent(recipientId, publication.text, this.bulletinKeyboard()));
     return messages;
   }
 
@@ -297,6 +296,26 @@ export class TelegramChannel implements DeliveryChannel {
       await this.bot.api.sendMessage(chatId, failure);
       return false;
     }
+  }
+
+  private async sendDetails(chatId: number): Promise<void> {
+    await this.bot.api.sendChatAction(chatId, "typing");
+    try {
+      await this.sendContent(String(chatId), await this.publications.getFreshDetails());
+    } catch (error) {
+      this.logger.error({ error }, "Detailed model bulletin failed");
+      await this.bot.api.sendMessage(chatId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");
+    }
+  }
+
+  private async sendClouds(chatId: number): Promise<void> {
+    const map = await this.getMapSelection(String(chatId));
+    const sent = await this.sendDiagnostic(
+      chatId,
+      async () => this.publications.getClouds(map.viewport, !map.isCustom),
+      "Диагностический снимок облаков временно недоступен.",
+    );
+    if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", String(chatId), map.viewport);
   }
 
   private async getMapViewport(recipientId: string): Promise<MapViewport> {
@@ -348,6 +367,12 @@ export class TelegramChannel implements DeliveryChannel {
     return keyboard;
   }
 
+  private bulletinKeyboard(): InlineKeyboard {
+    return new InlineKeyboard()
+      .text("🔬 Детали", "bulletin:details")
+      .text("☁️ Облака", "bulletin:clouds");
+  }
+
   private mapCaption(caption: string, viewport: MapViewport): string {
     return `${caption}\n${formatMapExtent(viewport)}`;
   }
@@ -371,7 +396,7 @@ export class TelegramChannel implements DeliveryChannel {
     await this.sendAttachment(recipientId, attachment);
   }
 
-  private async sendContent(recipientId: string, content: string) {
+  private async sendContent(recipientId: string, content: string, replyMarkup?: InlineKeyboard) {
     const chunks = splitText(content, 3400);
     const messages = [];
     for (const [index, chunk] of chunks.entries()) {
@@ -382,6 +407,7 @@ export class TelegramChannel implements DeliveryChannel {
       ), {
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
+        ...(replyMarkup && index === chunks.length - 1 ? { reply_markup: replyMarkup } : {}),
       }));
     }
     return messages;

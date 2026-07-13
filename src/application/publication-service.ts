@@ -14,6 +14,12 @@ import type { Logger } from "../logger.js";
 import type { MapViewport } from "../domain/map-viewport.js";
 import { renderModelDetails } from "../domain/model-details.js";
 import type { PointForecastService } from "./point-forecast-service.js";
+import type { ForecastMapService } from "./forecast-map-service.js";
+
+export interface DetailsPublication {
+  text: string;
+  attachments: DeliveryAttachment[];
+}
 
 export class PublicationService {
   constructor(
@@ -24,6 +30,7 @@ export class PublicationService {
     private readonly clouds: CloudDiagnosticService | null,
     private readonly cloudAnimation: CloudAnimationService | null,
     private readonly radar: RadarService | null,
+    private readonly forecastMap: ForecastMapService | null,
     private readonly pointForecasts: PointForecastService,
     private readonly timeZone: string,
     private readonly logger: Logger,
@@ -38,9 +45,20 @@ export class PublicationService {
     return bulletin ? this.create(bulletin) : null;
   }
 
-  async getFreshDetails(): Promise<string> {
+  async getFreshDetails(): Promise<DetailsPublication> {
     const bulletin = await this.bulletins.getFreshOrRun();
-    return renderModelDetails(bulletin.summary, this.timeZone);
+    const attachments: DeliveryAttachment[] = [];
+    if (this.forecastMap) {
+      try {
+        attachments.push(await this.forecastMap.get(bulletin.runId, bulletin.createdAt));
+      } catch (error) {
+        this.logger.warn({ error, bulletinId: bulletin.id }, "Forecast map is unavailable");
+      }
+    }
+    return {
+      text: renderModelDetails(bulletin.summary, this.timeZone),
+      attachments,
+    };
   }
 
   async getPointForecast(pointId: string): Promise<string> {

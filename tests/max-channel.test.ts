@@ -276,7 +276,12 @@ describe("MaxChannel", () => {
       } as never)
       .mockResolvedValueOnce(null);
     const api = apiStub();
-    const publications = { getFreshDetails: vi.fn(async () => "details") };
+    const publications = {
+      getFreshDetails: vi.fn(async () => ({
+        text: "details",
+        attachments: [mapImage()],
+      })),
+    };
     const channel = new MaxChannel(
       "token",
       "https://weather.example.ru",
@@ -297,6 +302,7 @@ describe("MaxChannel", () => {
     });
     expect(publications.getFreshDetails).toHaveBeenCalledOnce();
     expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>details</b>"));
+    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "map.png");
     await channel.stop();
   });
 
@@ -597,7 +603,7 @@ function createChannel(database: ReturnType<typeof databaseStub>, api: ReturnTyp
     "https://weather.example.ru",
     database as never,
     {
-      getFreshDetails: vi.fn(async () => "details"),
+      getFreshDetails: vi.fn(async () => ({ text: "details", attachments: [] })),
       getFreshOrRun: vi.fn(),
     } as never,
     [],

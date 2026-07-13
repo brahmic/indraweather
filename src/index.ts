@@ -6,6 +6,7 @@ import { CloudDiagnosticService } from "./application/cloud-diagnostic-service.j
 import { RadarService } from "./application/radar-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
+import { ForecastMapService } from "./application/forecast-map-service.js";
 import { PublicationService } from "./application/publication-service.js";
 import { PointForecastService } from "./application/point-forecast-service.js";
 import {
@@ -276,6 +277,29 @@ const radar = config.copernicus
     config.timeZone,
   )
   : null;
+const forecastMap = new ForecastMapService(
+  database,
+  new EumetviewClient({
+    baseUrl: config.satellite.wmsUrl,
+    wfsUrl: config.satellite.wfsUrl,
+    bbox: config.satellite.bbox,
+    width: config.satellite.width,
+    height: config.satellite.height,
+    timeoutMs: config.weatherTimeoutMs,
+    retries: config.weatherRetryCount,
+    maxImageBytes: config.satellite.maxImageBytes,
+  }),
+  satelliteOverlay,
+  windOverlay,
+  {
+    bbox: config.satellite.bbox,
+    width: config.satellite.width,
+    height: config.satellite.height,
+    maxImageBytes: config.satellite.maxImageBytes,
+    timeZone: config.timeZone,
+  },
+  logger,
+);
 
 let scheduler: Scheduler;
 const bulletinService = new BulletinService(
@@ -298,6 +322,7 @@ const publicationService = new PublicationService(
   cloudDiagnostics,
   cloudAnimation,
   radar,
+  forecastMap,
   pointForecasts,
   config.timeZone,
   logger,

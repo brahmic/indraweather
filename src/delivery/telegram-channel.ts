@@ -291,7 +291,15 @@ export class TelegramChannel implements DeliveryChannel {
   private async sendDetails(chatId: number): Promise<void> {
     await this.bot.api.sendChatAction(chatId, "typing");
     try {
-      await this.sendContent(String(chatId), await this.publications.getFreshDetails());
+      const details = await this.publications.getFreshDetails();
+      await this.sendContent(String(chatId), details.text);
+      for (const attachment of details.attachments) {
+        try {
+          await this.sendAttachment(chatId, attachment);
+        } catch (error) {
+          this.logger.warn({ err: error, filename: attachment.filename }, "Telegram forecast map delivery failed");
+        }
+      }
     } catch (error) {
       this.logger.error({ error }, "Detailed model bulletin failed");
       await this.bot.api.sendMessage(chatId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");

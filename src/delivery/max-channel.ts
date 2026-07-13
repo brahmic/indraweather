@@ -320,7 +320,15 @@ export class MaxChannel implements DeliveryChannel {
 
   private async sendDetails(userId: number): Promise<void> {
     try {
-      await this.sendText(userId, await this.publications.getFreshDetails());
+      const details = await this.publications.getFreshDetails();
+      await this.sendText(userId, details.text);
+      for (const attachment of details.attachments) {
+        try {
+          await this.sendAttachment(userId, attachment);
+        } catch (error) {
+          this.logger.warn({ err: error, filename: attachment.filename }, "MAX forecast map delivery failed");
+        }
+      }
     } catch (error) {
       this.logger.error({ error }, "MAX detailed model bulletin failed");
       await this.api.sendMessage(userId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");

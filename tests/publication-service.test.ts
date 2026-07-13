@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   formatDetailedSatellitePartial,
   formatDetailedSatelliteSkip,
@@ -71,6 +71,7 @@ describe("PublicationService", () => {
       null,
       null,
       null,
+      null,
       { get: async () => "point forecast" } as never,
       "Europe/Moscow",
       { warn: () => undefined } as never,
@@ -93,11 +94,49 @@ describe("PublicationService", () => {
       { getLatest: async () => image } as never,
       { getLatest: async () => animation } as never,
       null,
+      null,
       { get: async () => "point forecast" } as never,
       "Europe/Moscow",
       { warn: () => undefined } as never,
     );
 
     await expect(service.getClouds()).resolves.toEqual([image, animation]);
+  });
+
+  it("adds the model map to details without changing the main bulletin", async () => {
+    const createdAt = new Date("2026-07-13T09:00:00Z");
+    const map = { kind: "image", filename: "forecast-map.png" } as never;
+    const forecastMap = { get: vi.fn(async () => map) };
+    const service = new PublicationService(
+      {
+        getFreshOrRun: async () => ({
+          id: "bulletin-1",
+          runId: "run-1",
+          summary: {
+            generatedAt: createdAt.toISOString(),
+            horizonHours: 24,
+            pointSummaries: [],
+            agreement: { agreed: true, reasons: [] },
+          },
+          createdAt,
+        }),
+      } as never,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      forecastMap as never,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow",
+      { warn: () => undefined } as never,
+    );
+
+    const details = await service.getFreshDetails();
+
+    expect(details.text).toContain("Детализация по моделям");
+    expect(details.attachments).toEqual([map]);
+    expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt);
   });
 });

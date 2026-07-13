@@ -58,6 +58,13 @@ export interface WindOverlayForecast {
   }>;
 }
 
+export interface ForecastMapSnapshot {
+  forecastAt: Date;
+  points: Array<WindOverlayForecast["points"][number] & {
+    weatherCode: number | null;
+  }>;
+}
+
 export type StoredMapViewport = [west: number, south: number, east: number, north: number];
 
 export type PersonalAnimationKind = "satellite" | "clouds";
@@ -1071,6 +1078,51 @@ export class Database {
         model: row.model,
         speedMs: row.wind_speed_ms,
         directionDeg: row.wind_direction_deg,
+      })),
+    };
+  }
+
+  async getForecastMapSnapshot(runId: string, referenceAt: Date): Promise<ForecastMapSnapshot | null> {
+    const result = await this.pool.query<{
+      forecast_at: Date;
+      point_id: string;
+      name: string;
+      latitude: number;
+      longitude: number;
+      model: "ecmwf" | "gfs";
+      wind_speed_ms: number | null;
+      wind_direction_deg: number | null;
+      weather_code: number | null;
+    }>(`
+      WITH target AS (
+        SELECT forecast_at
+        FROM forecast_values
+        WHERE run_id = $1
+        ORDER BY ABS(EXTRACT(EPOCH FROM (forecast_at - $2)))
+        LIMIT 1
+      )
+      SELECT forecast_at, point_id, name, latitude, longitude, model,
+             wind_speed_ms, wind_direction_deg, weather_code
+      FROM forecast_values
+      JOIN control_points ON control_points.id = forecast_values.point_id
+      WHERE run_id = $1
+        AND forecast_at = (SELECT forecast_at FROM target)
+        AND control_points.active = true
+      ORDER BY control_points.display_order, model
+    `, [runId, referenceAt]);
+    const first = result.rows[0];
+    if (!first) return null;
+    return {
+      forecastAt: first.forecast_at,
+      points: result.rows.map((row) => ({
+        pointId: row.point_id,
+        name: row.name,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        model: row.model,
+        speedMs: row.wind_speed_ms,
+        directionDeg: row.wind_direction_deg,
+        weatherCode: row.weather_code,
       })),
     };
   }

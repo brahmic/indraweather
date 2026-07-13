@@ -47,6 +47,14 @@ export class WindOverlayService {
     }
     if (!forecast) return image;
 
+    return this.applyForecast(image, forecast, placement);
+  }
+
+  async applyForecast(
+    image: Uint8Array,
+    forecast: WindOverlayForecast,
+    placement: WindOverlayPlacement = {},
+  ): Promise<Uint8Array> {
     try {
       const result = await sharp(image)
         .composite([{ input: Buffer.from(this.render(forecast, placement.headerTop ?? 12)) }])

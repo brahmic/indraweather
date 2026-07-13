@@ -5,6 +5,8 @@ export interface WeatherCondition {
   priority: number;
 }
 
+export type WeatherConditionGroup = "fair" | "cloud" | "fog" | "rain" | "snow" | "thunderstorm";
+
 /** Maps Open-Meteo's WMO weather interpretation codes to channel-neutral emoji. */
 export function weatherConditionForCode(code: number | null | undefined): WeatherCondition | null {
   switch (code) {
@@ -69,6 +71,33 @@ export function summarizeWeatherCodes(codes: Array<number | null | undefined>): 
   return [...counts.values()]
     .sort((left, right) => right.count - left.count || right.condition.priority - left.condition.priority)[0]
     ?.condition ?? null;
+}
+
+export function weatherConditionGroup(condition: WeatherCondition | null | undefined): WeatherConditionGroup | null {
+  if (!condition) return null;
+  switch (condition.id) {
+    case "clear":
+    case "mostly-clear":
+    case "partly-cloudy":
+      return "fair";
+    case "overcast":
+      return "cloud";
+    case "fog":
+      return "fog";
+    case "drizzle":
+    case "freezing-drizzle":
+    case "rain":
+    case "freezing-rain":
+    case "showers":
+      return "rain";
+    case "snow":
+    case "snow-showers":
+      return "snow";
+    case "thunderstorm":
+      return "thunderstorm";
+    default:
+      return null;
+  }
 }
 
 function condition(id: string, icon: string, label: string, priority: number): WeatherCondition {

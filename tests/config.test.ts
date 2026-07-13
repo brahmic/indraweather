@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig, loadControlPoints } from "../src/config.js";
 
 describe("loadConfig", () => {
-  it("loads Pongoma and Bolshoy Robyak as active control points", async () => {
+  it("loads added control points as active", async () => {
     const points = await loadControlPoints();
 
     expect(points).toEqual(expect.arrayContaining([
@@ -18,6 +18,14 @@ describe("loadConfig", () => {
         name: "Остров Большой Робьяк",
         latitude: 65.6256,
         longitude: 34.9084,
+        active: true,
+      }),
+      expect.objectContaining({
+        id: "sonostrov",
+        name: "Остров Соностров",
+        shortName: "Соностров",
+        latitude: 66.172405,
+        longitude: 34.230645,
         active: true,
       }),
     ]));

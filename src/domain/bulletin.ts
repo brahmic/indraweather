@@ -107,7 +107,7 @@ export function renderBulletin(input: BulletinInput): string {
     const marine = marineByPointId.get(point.point.id);
     lines.push(marine ? `Море: ${renderMarine(marine)}.` : "Море: нет данных.");
     const tide = renderTide(tidesByPointId.get(point.point.id) ?? [], generatedAt, input.timeZone);
-    if (tide) lines.push(`Прилив: ${tide}.`);
+    lines.push(tide ? `Прилив: ${tide}.` : "Прилив: данные не удалось получить.");
   }
 
   lines.push(

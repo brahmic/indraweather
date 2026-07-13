@@ -45,6 +45,15 @@
     "active": true
   },
   {
+    "id": "sonostrov",
+    "name": "Остров Соностров",
+    "shortName": "Соностров",
+    "latitude": 66.172405,
+    "longitude": 34.230645,
+    "order": 35,
+    "active": true
+  },
+  {
     "id": "kovda-bay",
     "name": "Ковдинская губа",
     "shortName": "Ковда",

@@ -19,6 +19,8 @@ import { POINT_FORECAST_HOURS } from "../domain/point-forecast.js";
 import { summarizeMarine } from "../infrastructure/open-meteo-marine.js";
 import { summarizeWeatherCodes } from "../domain/weather-condition.js";
 
+const TIDE_HISTORY_HOURS = 30;
+
 export interface RunBulletinOptions {
   kind: "scheduled" | "manual";
   scheduledFor?: Date;
@@ -166,17 +168,21 @@ export class BulletinService {
   }
 
   private async loadTides(points: ControlPoint[], now: Date, errors: string[]) {
+    const start = new Date(now.getTime() - TIDE_HISTORY_HOURS * 60 * 60 * 1000);
     const end = new Date(now.getTime() + 48 * 60 * 60 * 1000);
     const cachedByPoint = new Map(await Promise.all(points.map(async (point) => [
       point.id,
-      await this.database.getTideExtremes(point.id, now, end),
+      await this.database.getTideExtremes(point.id, start, end),
     ] as const)));
-    const stalePoints = points.filter((point) => !coversNextTideDay(cachedByPoint.get(point.id) ?? [], now));
+    const stalePoints = points.filter((point) => {
+      const cached = cachedByPoint.get(point.id) ?? [];
+      return !coversNextTideDay(cached, now) || !hasEbbStart(cached, now);
+    });
     const tides = this.tides;
     if (stalePoints.length === 0 || !tides) return [...cachedByPoint.values()].flat();
 
     const fetchEnd = new Date(now.getTime() + 72 * 60 * 60 * 1000);
-    const fetched = await Promise.allSettled(stalePoints.map((point) => tides.getExtremes(point, now, fetchEnd)));
+    const fetched = await Promise.allSettled(stalePoints.map((point) => tides.getExtremes(point, start, fetchEnd)));
     for (const [index, result] of fetched.entries()) {
       const point = stalePoints[index];
       if (!point) continue;
@@ -188,7 +194,7 @@ export class BulletinService {
         this.logger.warn({ error: message }, "Tide request failed");
       }
     }
-    return (await Promise.all(points.map((point) => this.database.getTideExtremes(point.id, now, end)))).flat();
+    return (await Promise.all(points.map((point) => this.database.getTideExtremes(point.id, start, end)))).flat();
   }
 
   private async loadMarine(
@@ -228,4 +234,11 @@ function errorMessage(error: unknown): string {
 
 function coversNextTideDay(tides: Array<{ extremeAt: Date }>, now: Date): boolean {
   return tides.some((item) => item.extremeAt.getTime() > now.getTime() + 24 * 60 * 60 * 1000);
+}
+
+function hasEbbStart(tides: Array<{ extremeAt: Date; type: "high" | "low" }>, now: Date): boolean {
+  const next = [...tides]
+    .sort((left, right) => left.extremeAt.getTime() - right.extremeAt.getTime())
+    .find((item) => item.extremeAt > now);
+  return next?.type !== "low" || tides.some((item) => item.type === "high" && item.extremeAt <= now);
 }

@@ -400,16 +400,20 @@ function renderPressure(summary: BulletinSummary): string {
 function renderTide(tides: TideExtreme[], now: Date, timeZone: string): string | null {
   const sorted = [...tides].sort((left, right) => left.extremeAt.getTime() - right.extremeAt.getTime());
   const future = sorted.filter((item) => item.extremeAt > now);
-  const high = future.find((item) => item.type === "high");
-  const low = future.find((item) => item.type === "low");
   const next = future[0];
-  if (!high || !low || !next) return null;
-  const phase = next.type === "high" ? "вода прибывает" : "вода убывает";
+  if (!next) return null;
   const station = next.stationName && next.stationDistanceKm !== null
     && next.stationDistanceKm > TIDE_APPROXIMATE_STATION_DISTANCE_KM
     ? ` Ориентировочно: станция ${next.stationName}, ${formatNumber(next.stationDistanceKm)} км`
     : "";
-  return `${phase}; полная вода ${formatDateTime(high.extremeAt, timeZone)}, малая вода ${formatDateTime(low.extremeAt, timeZone)}${station}`;
+  if (next.type === "high") {
+    const low = future.find((item) => item.type === "low");
+    if (!low) return null;
+    return `вода прибывает; отлив начнётся ${formatDateTime(next.extremeAt, timeZone)} (полная вода), малая вода ${formatDateTime(low.extremeAt, timeZone)}${station}`;
+  }
+  const high = [...sorted].reverse().find((item) => item.type === "high" && item.extremeAt <= now);
+  if (!high) return null;
+  return `вода убывает; отлив начался ${formatDateTime(high.extremeAt, timeZone)} (полная вода), малая вода ${formatDateTime(next.extremeAt, timeZone)}${station}`;
 }
 
 function renderPreviousDifference(

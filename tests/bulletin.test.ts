@@ -199,9 +199,31 @@ describe("renderBulletin", () => {
     });
 
     expect(result).toContain(
-      "Прилив: вода прибывает; полная вода 11 июля в 11:00 МСК, малая вода 11 июля в 17:00 МСК Ориентировочно: станция Тестовая станция, 31,6 км.",
+      "Прилив: вода прибывает; отлив начнётся 11 июля в 11:00 МСК (полная вода), малая вода 11 июля в 17:00 МСК Ориентировочно: станция Тестовая станция, 31,6 км.",
     );
     expect(result).not.toContain("Обстановка\nПрилив:");
+  });
+
+  it("shows when the ongoing ebb started at the previous high water", () => {
+    const result = renderBulletin({
+      summary,
+      warnings: [],
+      tides: [
+        { ...tides[0]!, extremeAt: new Date("2026-07-11T04:00:00Z") },
+        { ...tides[1]!, extremeAt: new Date("2026-07-11T08:00:00Z") },
+      ],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [marine],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain(
+      "Прилив: вода убывает; отлив начался 11 июля в 07:00 МСК (полная вода), малая вода 11 июля в 11:00 МСК Ориентировочно: станция Тестовая станция, 31,6 км.",
+    );
   });
 
   it("adds agreed wind direction and significant turn to a control point", () => {

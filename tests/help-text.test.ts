@@ -12,7 +12,7 @@ describe("formatHelpHtml", () => {
     expect(text).toContain("границы моделей, а не среднее значение");
     expect(text).toContain("При расхождении под точкой приводятся оба сценария моделей");
     expect(text).toContain("Время динамики и поворота — интервал прогноза");
-    expect(text).toContain("Прилив в строке точки показывает направление воды");
+    expect(text).toContain("Прилив в строке точки показывает направление воды и начало отлива");
     expect(text).toContain("<code>/map</code>");
     expect(text).toContain("На обзорных снимках отмечены все активные контрольные точки");
     expect(text).toContain("Модельная карта из <code>/details</code> строится по свежему выпуску");

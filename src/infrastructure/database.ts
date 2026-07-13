@@ -62,6 +62,7 @@ export interface ForecastMapSnapshot {
   forecastAt: Date;
   points: Array<WindOverlayForecast["points"][number] & {
     weatherCode: number | null;
+    temperatureC: number | null;
   }>;
 }
 
@@ -1134,6 +1135,7 @@ export class Database {
       wind_speed_ms: number | null;
       wind_direction_deg: number | null;
       weather_code: number | null;
+      temperature_c: number | null;
     }>(`
       WITH target AS (
         SELECT forecast_at
@@ -1143,7 +1145,7 @@ export class Database {
         LIMIT 1
       )
       SELECT forecast_at, point_id, name, latitude, longitude, model,
-             wind_speed_ms, wind_direction_deg, weather_code
+             wind_speed_ms, wind_direction_deg, weather_code, temperature_c
       FROM forecast_values
       JOIN control_points ON control_points.id = forecast_values.point_id
       WHERE run_id = $1
@@ -1164,6 +1166,7 @@ export class Database {
         speedMs: row.wind_speed_ms,
         directionDeg: row.wind_direction_deg,
         weatherCode: row.weather_code,
+        temperatureC: row.temperature_c,
       })),
     };
   }

@@ -10,19 +10,19 @@ describe("ForecastMapService", () => {
       points: [
         {
           pointId: "kem", name: "Кемь", latitude: 65, longitude: 34,
-          model: "ecmwf" as const, speedMs: 7, directionDeg: 225, weatherCode: 2,
+          model: "ecmwf" as const, speedMs: 7, directionDeg: 225, weatherCode: 2, temperatureC: 8,
         },
         {
           pointId: "kem", name: "Кемь", latitude: 65, longitude: 34,
-          model: "gfs" as const, speedMs: 9, directionDeg: 230, weatherCode: 61,
+          model: "gfs" as const, speedMs: 9, directionDeg: 230, weatherCode: 61, temperatureC: 10,
         },
         {
           pointId: "pongoma", name: "Поньгома", latitude: 65.3446, longitude: 34.409,
-          model: "ecmwf" as const, speedMs: 6, directionDeg: 270, weatherCode: 0,
+          model: "ecmwf" as const, speedMs: 6, directionDeg: 270, weatherCode: 0, temperatureC: 7,
         },
         {
           pointId: "pongoma", name: "Поньгома", latitude: 65.3446, longitude: 34.409,
-          model: "gfs" as const, speedMs: 7, directionDeg: 275, weatherCode: 0,
+          model: "gfs" as const, speedMs: 7, directionDeg: 275, weatherCode: 0, temperatureC: 9,
         },
       ],
     };
@@ -50,6 +50,10 @@ describe("ForecastMapService", () => {
     const header = (18 * info.width + 18) * info.channels;
     const conditionCard = (614 * info.width + 680) * info.channels;
     const pongomaConditionCard = (546 * info.width + 680) * info.channels;
+    const temperatureRegion = data.subarray(
+      (626 * info.width + 722) * info.channels,
+      (642 * info.width + 738) * info.channels,
+    );
 
     expect(database.getForecastMapSnapshot).toHaveBeenCalledWith("run-1", new Date("2026-07-13T08:40:00Z"));
     expect(coastlineOverlay.apply).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Array));
@@ -58,6 +62,8 @@ describe("ForecastMapService", () => {
     expect(result.caption).toContain("E/G: сценарии различаются");
     expect([...data.subarray(header, header + 3)]).not.toEqual([82, 127, 145]);
     expect([...data.subarray(conditionCard, conditionCard + 3)]).not.toEqual([82, 127, 145]);
+    expect(data[conditionCard]).toBeGreaterThan(160);
+    expect([...temperatureRegion].some((value) => value < 100)).toBe(true);
     expect([...data.subarray(pongomaConditionCard, pongomaConditionCard + 3)]).not.toEqual([82, 127, 145]);
   });
 });

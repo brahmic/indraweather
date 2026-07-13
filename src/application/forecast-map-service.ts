@@ -107,20 +107,34 @@ export class ForecastMapService {
     const [pointX, pointY] = this.project(first.longitude, first.latitude);
     const width = ecmwfCondition && gfsCondition
       && weatherConditionGroup(ecmwfCondition) !== weatherConditionGroup(gfsCondition)
-      ? 88
-      : 45;
+      ? 124
+      : 66;
     const x = Math.max(8, Math.min(this.options.width - width - 8, pointX > this.options.width * 0.72 ? pointX - width - 12 : pointX + 12));
-    const y = Math.max(122, Math.min(this.options.height - 44, pointY + 14));
+    const y = Math.max(122, Math.min(this.options.height - 46, pointY + 14));
 
     if (ecmwfCondition && gfsCondition
       && weatherConditionGroup(ecmwfCondition) === weatherConditionGroup(gfsCondition)) {
-      return conditionCard(x, y, width, summarizeWeatherCodes([ecmwf?.weatherCode, gfs?.weatherCode]));
+      return conditionCard(
+        x,
+        y,
+        width,
+        summarizeWeatherCodes([ecmwf?.weatherCode, gfs?.weatherCode]),
+        formatTemperatureRange([ecmwf?.temperatureC, gfs?.temperatureC]),
+      );
     }
     if (ecmwfCondition && gfsCondition) {
-      return `${conditionCard(x, y, width, ecmwfCondition, "E", 27)}
-        ${conditionCard(x + 44, y, 44, gfsCondition, "G", 27, false)}`;
+      return `${conditionCard(x, y, 62, ecmwfCondition, formatTemperature(ecmwf?.temperatureC), "E")}
+        ${conditionCard(x + 62, y, 62, gfsCondition, formatTemperature(gfs?.temperatureC), "G", 0, false)}`;
     }
-    return conditionCard(x, y, width, ecmwfCondition ?? gfsCondition, ecmwfCondition ? "E" : "G", 28);
+    const model = ecmwf ?? gfs;
+    return conditionCard(
+      x,
+      y,
+      width,
+      ecmwfCondition ?? gfsCondition,
+      formatTemperature(model?.temperatureC),
+      ecmwfCondition ? "E" : "G",
+    );
   }
 
   private project(longitude: number, latitude: number): [number, number] {
@@ -152,25 +166,33 @@ function conditionCard(
   y: number,
   width: number,
   weather: WeatherCondition | null,
+  temperature: string | null,
   label?: "E" | "G",
   iconOffset = 0,
   includeBackground = true,
 ): string {
   const background = includeBackground
-    ? `<rect x="${round(x)}" y="${round(y)}" width="${width}" height="34" rx="3" fill="#101820" fill-opacity="0.82"/>`
+    ? `<rect x="${round(x)}" y="${round(y)}" width="${width}" height="36" rx="3" fill="#f7fbfc" fill-opacity="0.92"/>`
     : "";
   const labelSvg = label
-    ? `<text x="${round(x + 6)}" y="${round(y + 21)}" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="11" font-weight="700">${label}</text>`
+    ? `<text x="${round(x + 6)}" y="${round(y + 21)}" fill="#385763" font-family="Noto Sans, sans-serif" font-size="11" font-weight="700">${label}</text>`
     : "";
-  const centerX = x + (label ? iconOffset : width / 2);
-  return `<g>${background}${labelSvg}${weatherSymbol(weather, centerX, y + 17, 10)}</g>`;
+  const centerX = temperature === null
+    ? x + (label ? width / 2 : width / 2)
+    : x + (label ? 26 : 18) + iconOffset;
+  const temperatureSvg = temperature
+    ? `<text x="${round(x + width - 6)}" y="${round(y + 23)}" text-anchor="end" fill="#132d36" font-family="Noto Sans, sans-serif" font-size="12" font-weight="700">${temperature}</text>`
+    : "";
+  return `<g>${background}${labelSvg}${weatherSymbol(weather, centerX, y + 17, 8)}${temperatureSvg}</g>`;
 }
 
 function weatherSymbol(weather: WeatherCondition | null, x: number, y: number, size: number): string {
   if (!weather) {
     return `<text x="${round(x)}" y="${round(y + 5)}" text-anchor="middle" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="18" font-weight="700">?</text>`;
   }
-  const cloud = `<path d="M${round(x - size)} ${round(y + 4)} C${round(x - size)} ${round(y - 1)}, ${round(x - 5)} ${round(y - 4)}, ${round(x - 1)} ${round(y - 2)} C${round(x + 2)} ${round(y - 8)}, ${round(x + 10)} ${round(y - 5)}, ${round(x + 10)} ${round(y + 1)} C${round(x + 15)} ${round(y + 1)}, ${round(x + 16)} ${round(y + 8)}, ${round(x + 10)} ${round(y + 8)} H${round(x - 8)} C${round(x - 13)} ${round(y + 8)}, ${round(x - 14)} ${round(y + 4)}, ${round(x - 10)} ${round(y + 4)} Z" fill="#e7f1f4" stroke="#17242b" stroke-width="1.25"/>`;
+  const scale = size / 10;
+  const offset = (value: number) => round(value * scale);
+  const cloud = `<path d="M${round(x - size)} ${round(y + offset(4))} C${round(x - size)} ${round(y - offset(1))}, ${round(x - offset(5))} ${round(y - offset(4))}, ${round(x - offset(1))} ${round(y - offset(2))} C${round(x + offset(2))} ${round(y - offset(8))}, ${round(x + offset(10))} ${round(y - offset(5))}, ${round(x + offset(10))} ${round(y + offset(1))} C${round(x + offset(15))} ${round(y + offset(1))}, ${round(x + offset(16))} ${round(y + offset(8))}, ${round(x + offset(10))} ${round(y + offset(8))} H${round(x - offset(8))} C${round(x - offset(13))} ${round(y + offset(8))}, ${round(x - offset(14))} ${round(y + offset(4))}, ${round(x - size)} ${round(y + offset(4))} Z" fill="#e7f1f4" stroke="#17242b" stroke-width="${round(1.25 * scale)}"/>`;
   switch (weather.id) {
     case "clear":
       return sunSymbol(x, y, size);
@@ -180,22 +202,39 @@ function weatherSymbol(weather: WeatherCondition | null, x: number, y: number, s
     case "overcast":
       return cloud;
     case "fog":
-      return `${cloud}<path d="M${round(x - 12)} ${round(y + 12)}H${round(x + 12)} M${round(x - 9)} ${round(y + 16)}H${round(x + 9)}" stroke="#d8e5e9" stroke-width="2" stroke-linecap="round"/>`;
+      return `${cloud}<path d="M${round(x - offset(12))} ${round(y + offset(12))}H${round(x + offset(12))} M${round(x - offset(9))} ${round(y + offset(16))}H${round(x + offset(9))}" stroke="#d8e5e9" stroke-width="${round(2 * scale)}" stroke-linecap="round"/>`;
     case "drizzle":
     case "freezing-drizzle":
-      return `${cloud}<path d="M${round(x - 6)} ${round(y + 12)}l-2 4 M${round(x)} ${round(y + 12)}l-2 4 M${round(x + 6)} ${round(y + 12)}l-2 4" stroke="#5bc0de" stroke-width="2" stroke-linecap="round"/>`;
+      return `${cloud}<path d="M${round(x - offset(6))} ${round(y + offset(12))}l${-offset(2)} ${offset(4)} M${round(x)} ${round(y + offset(12))}l${-offset(2)} ${offset(4)} M${round(x + offset(6))} ${round(y + offset(12))}l${-offset(2)} ${offset(4)}" stroke="#5bc0de" stroke-width="${round(2 * scale)}" stroke-linecap="round"/>`;
     case "rain":
     case "freezing-rain":
     case "showers":
-      return `${cloud}<path d="M${round(x - 7)} ${round(y + 12)}l-2 5 M${round(x)} ${round(y + 12)}l-2 5 M${round(x + 7)} ${round(y + 12)}l-2 5" stroke="#29b6f6" stroke-width="2.5" stroke-linecap="round"/>`;
+      return `${cloud}<path d="M${round(x - offset(7))} ${round(y + offset(12))}l${-offset(2)} ${offset(5)} M${round(x)} ${round(y + offset(12))}l${-offset(2)} ${offset(5)} M${round(x + offset(7))} ${round(y + offset(12))}l${-offset(2)} ${offset(5)}" stroke="#29b6f6" stroke-width="${round(2.5 * scale)}" stroke-linecap="round"/>`;
     case "snow":
     case "snow-showers":
-      return `${cloud}<g stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"><path d="M${round(x - 5)} ${round(y + 12)}v6 M${round(x - 8)} ${round(y + 15)}h6 M${round(x + 5)} ${round(y + 12)}v6 M${round(x + 2)} ${round(y + 15)}h6"/></g>`;
+      return `${cloud}<g stroke="#ffffff" stroke-width="${round(1.6 * scale)}" stroke-linecap="round"><path d="M${round(x - offset(5))} ${round(y + offset(12))}v${offset(6)} M${round(x - offset(8))} ${round(y + offset(15))}h${offset(6)} M${round(x + offset(5))} ${round(y + offset(12))}v${offset(6)} M${round(x + offset(2))} ${round(y + offset(15))}h${offset(6)}"/></g>`;
     case "thunderstorm":
-      return `${cloud}<path d="M${round(x + 1)} ${round(y + 9)}l-5 9h5l-2 7 8-11h-5l3-5Z" fill="#ffd54f" stroke="#17242b" stroke-width="1"/>`;
+      return `${cloud}<path d="M${round(x + offset(1))} ${round(y + offset(9))}l${-offset(5)} ${offset(9)}h${offset(5)}l${-offset(2)} ${offset(7)} ${offset(8)} ${-offset(11)}h${-offset(5)}l${offset(3)} ${-offset(5)}Z" fill="#ffd54f" stroke="#17242b" stroke-width="${round(scale)}"/>`;
     default:
       return "";
   }
+}
+
+function formatTemperature(temperature: number | null | undefined): string | null {
+  if (temperature === null || temperature === undefined || !Number.isFinite(temperature)) return null;
+  const rounded = Math.round(temperature);
+  return `${rounded > 0 ? "+" : ""}${rounded}°`;
+}
+
+function formatTemperatureRange(temperatures: Array<number | null | undefined>): string | null {
+  const values = temperatures.filter((temperature): temperature is number =>
+    temperature !== null && temperature !== undefined && Number.isFinite(temperature),
+  ).map(Math.round);
+  if (values.length === 0) return null;
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  if (minimum === maximum) return formatTemperature(minimum);
+  return `${formatTemperature(minimum)}…${formatTemperature(maximum)}`;
 }
 
 function sunSymbol(x: number, y: number, size: number): string {

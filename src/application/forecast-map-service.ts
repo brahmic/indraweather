@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import type { ImageAttachment } from "../delivery/types.js";
 import type { MapViewport } from "../domain/map-viewport.js";
+import type { ControlPoint } from "../domain/types.js";
 import {
   summarizeWeatherCodes,
   weatherConditionForCode,
@@ -18,6 +19,7 @@ export interface ForecastMapOptions {
   height: number;
   maxImageBytes: number;
   timeZone: string;
+  points: readonly Pick<ControlPoint, "id" | "shortName">[];
 }
 
 export class ForecastMapService {
@@ -40,7 +42,9 @@ export class ForecastMapService {
 
     try {
       const base = await this.createBase(options);
-      const coastlined = await coastlineOverlay.apply(base, await coastlineClient.getCoastline());
+      const coastlined = await coastlineOverlay.apply(base, await coastlineClient.getCoastline(), {
+        includeSettlements: false,
+      });
       const data = await this.addConditions(coastlined, forecast, options);
       return {
         kind: "image",
@@ -83,7 +87,7 @@ export class ForecastMapService {
       <g>
         <rect x="12" y="12" width="510" height="40" rx="3" fill="#101820" fill-opacity="0.84"/>
         <text x="24" y="29" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="14" font-weight="700">МОДЕЛЬНАЯ КАРТА · ПРОГНОЗ ${time} МСК</text>
-        <text x="24" y="45" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="12">Одна иконка: ECMWF и GFS сходятся · E/G: разные сценарии</text>
+        <text x="24" y="45" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="12">Одна строка: ECMWF и GFS сходятся · E/G: разные сценарии</text>
       </g>
       ${this.renderConditions(forecast, options)}
     </svg>`;
@@ -101,7 +105,10 @@ export class ForecastMapService {
       current.push(point);
       groups.set(point.pointId, current);
     }
-    return [...groups.values()].map((models) => this.renderPointConditions(models, options)).join("\n");
+    return [...groups.values()]
+      .map((models) => this.renderPointConditions(models, options))
+      .filter(Boolean)
+      .join("\n");
   }
 
   private renderPointConditions(
@@ -115,34 +122,50 @@ export class ForecastMapService {
     const ecmwfCondition = weatherConditionForCode(ecmwf?.weatherCode);
     const gfsCondition = weatherConditionForCode(gfs?.weatherCode);
     const [pointX, pointY] = this.project(first.longitude, first.latitude, options);
-    const width = ecmwfCondition && gfsCondition
-      && weatherConditionGroup(ecmwfCondition) !== weatherConditionGroup(gfsCondition)
-      ? 74
-      : 52;
-    const x = Math.max(8, Math.min(options.width - width - 8, pointX > options.width * 0.72 ? pointX - width - 12 : pointX + 12));
-    const y = Math.max(72, Math.min(options.height - 50, pointY + 14));
+    if (!this.isVisible(first.longitude, first.latitude, options)) return "";
+    const twoScenarios = Boolean(
+      ecmwfCondition
+      && gfsCondition
+      && weatherConditionGroup(ecmwfCondition) !== weatherConditionGroup(gfsCondition),
+    );
+    const point = options.points.find((item) => item.id === first.pointId);
+    const title = point?.shortName ?? first.name;
+    const layout = pointLayout(pointX, pointY, title, twoScenarios, options);
+    const marker = `<circle cx="${round(pointX)}" cy="${round(pointY)}" r="4" fill="#ffd54f" stroke="#17242b" stroke-width="1.5"/>`;
+    const heading = `<text x="${round(layout.x)}" y="${round(layout.titleY)}" fill="#ffffff" stroke="#17242b" stroke-width="3" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="16" font-weight="600">${escapeXml(title)}</text>`;
 
     if (ecmwfCondition && gfsCondition
       && weatherConditionGroup(ecmwfCondition) === weatherConditionGroup(gfsCondition)) {
-      return conditionMarker(
-        x,
-        y,
+      return `<g>${marker}${heading}${inlineCondition(
+        layout.detailX,
+        layout.titleY,
         summarizeWeatherCodes([ecmwf?.weatherCode, gfs?.weatherCode]),
         formatTemperatureRange([ecmwf?.temperatureC, gfs?.temperatureC]),
-      );
+      )}</g>`;
     }
     if (ecmwfCondition && gfsCondition) {
-      return `${conditionMarker(x, y, ecmwfCondition, formatTemperature(ecmwf?.temperatureC), "E")}
-        ${conditionMarker(x, y + 20, gfsCondition, formatTemperature(gfs?.temperatureC), "G")}`;
+      return `<g>${marker}${heading}${conditionRow(
+        layout.x,
+        layout.titleY + 14,
+        ecmwfCondition,
+        formatTemperature(ecmwf?.temperatureC),
+        "E",
+      )}${conditionRow(
+        layout.x,
+        layout.titleY + 31,
+        gfsCondition,
+        formatTemperature(gfs?.temperatureC),
+        "G",
+      )}</g>`;
     }
     const model = ecmwf ?? gfs;
-    return conditionMarker(
-      x,
-      y,
+    return `<g>${marker}${heading}${inlineCondition(
+      layout.detailX,
+      layout.titleY,
       ecmwfCondition ?? gfsCondition,
       formatTemperature(model?.temperatureC),
       ecmwfCondition ? "E" : "G",
-    );
+    )}</g>`;
   }
 
   private project(longitude: number, latitude: number, options: ForecastMapOptions): [number, number] {
@@ -151,6 +174,11 @@ export class ForecastMapService {
       (longitude - west) / (east - west) * options.width,
       (north - latitude) / (north - south) * options.height,
     ];
+  }
+
+  private isVisible(longitude: number, latitude: number, options: ForecastMapOptions): boolean {
+    const [west, south, east, north] = options.bbox;
+    return longitude >= west && longitude <= east && latitude >= south && latitude <= north;
   }
 
   private caption(forecastAt: Date): string {
@@ -169,21 +197,59 @@ export class ForecastMapService {
   }
 }
 
-function conditionMarker(
+function inlineCondition(
   x: number,
-  y: number,
+  baseline: number,
   weather: WeatherCondition | null,
   temperature: string | null,
   label?: "E" | "G",
 ): string {
   const labelSvg = label
-    ? `<text x="${round(x)}" y="${round(y + 5)}" fill="#ffffff" stroke="#17242b" stroke-width="2.5" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="10" font-weight="800">${label}</text>`
+    ? `<text x="${round(x)}" y="${round(baseline)}" fill="#ffffff" stroke="#17242b" stroke-width="2.5" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="10" font-weight="800">${label}</text>`
     : "";
-  const centerX = x + (label ? 17 : 9);
+  const centerX = x + (label ? 17 : 7);
   const temperatureSvg = temperature
-    ? `<text x="${round(x + (label ? 31 : 22))}" y="${round(y + 5)}" fill="#ffffff" stroke="#17242b" stroke-width="3" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="12" font-weight="800">${temperature}</text>`
+    ? `<text x="${round(x + (label ? 29 : 20))}" y="${round(baseline)}" fill="#ffffff" stroke="#17242b" stroke-width="3" paint-order="stroke" font-family="Noto Sans, sans-serif" font-size="12" font-weight="800">${temperature}</text>`
     : "";
-  return `<g>${labelSvg}${weatherSymbol(weather, centerX, y, 7)}${temperatureSvg}</g>`;
+  return `<g>${labelSvg}${weatherSymbol(weather, centerX, baseline - 5, 6)}${temperatureSvg}</g>`;
+}
+
+function conditionRow(
+  x: number,
+  baseline: number,
+  weather: WeatherCondition | null,
+  temperature: string | null,
+  label: "E" | "G",
+): string {
+  return inlineCondition(x, baseline, weather, temperature, label);
+}
+
+function pointLayout(
+  pointX: number,
+  pointY: number,
+  title: string,
+  twoScenarios: boolean,
+  options: ForecastMapOptions,
+): { x: number; detailX: number; titleY: number } {
+  const titleWidth = Math.max(36, [...title].length * 8.5);
+  const detailWidth = twoScenarios ? 72 : 86;
+  const titleY = Math.max(
+    70,
+    Math.min(options.height - (twoScenarios ? 45 : 14), pointY < 70 ? pointY + 16 : pointY - 8),
+  );
+  const fitsRight = pointX + 8 + titleWidth + (twoScenarios ? 0 : detailWidth) <= options.width - 8;
+  const x = fitsRight
+    ? pointX + 8
+    : Math.max(8, pointX - titleWidth - (twoScenarios ? 10 : detailWidth + 10));
+  return {
+    x,
+    detailX: x + titleWidth + 8,
+    titleY,
+  };
+}
+
+function escapeXml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function weatherSymbol(weather: WeatherCondition | null, x: number, y: number, size: number): string {

@@ -307,6 +307,7 @@ const forecastMap = new ForecastMapService(
     height: config.satellite.height,
     maxImageBytes: config.satellite.maxImageBytes,
     timeZone: config.timeZone,
+    points,
   },
   logger,
 );

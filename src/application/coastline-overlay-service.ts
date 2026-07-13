@@ -26,7 +26,10 @@ export class CoastlineOverlayService {
   async apply(
     image: Uint8Array,
     coastline: CoastlinePath[],
-    { includeMapContext = true }: { includeMapContext?: boolean } = {},
+    {
+      includeMapContext = true,
+      includeSettlements = true,
+    }: { includeMapContext?: boolean; includeSettlements?: boolean } = {},
   ): Promise<Uint8Array> {
     const pathData = coastline
       .map((line) => this.toSvgPath(line))
@@ -45,15 +48,18 @@ export class CoastlineOverlayService {
       </svg>
     `;
     const coastlined = await this.composite(image, svg);
-    return includeMapContext ? this.applyContext(coastlined) : coastlined;
+    return includeMapContext ? this.applyContext(coastlined, { includeSettlements }) : coastlined;
   }
 
-  async applyContext(image: Uint8Array): Promise<Uint8Array> {
+  async applyContext(
+    image: Uint8Array,
+    { includeSettlements = true }: { includeSettlements?: boolean } = {},
+  ): Promise<Uint8Array> {
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg"
            width="${this.options.width}" height="${this.options.height}"
            viewBox="0 0 ${this.options.width} ${this.options.height}">
-        ${this.renderSettlements()}
+        ${includeSettlements ? this.renderSettlements() : ""}
         ${this.renderNorthArrow()}
         ${this.renderScale()}
       </svg>

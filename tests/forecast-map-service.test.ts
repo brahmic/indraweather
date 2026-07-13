@@ -47,6 +47,10 @@ describe("ForecastMapService", () => {
         height: 800,
         maxImageBytes: 1_000_000,
         timeZone: "Europe/Moscow",
+        points: [
+          { id: "kem", shortName: "Кемь" },
+          { id: "pongoma", shortName: "Поньгома" },
+        ],
       },
       { warn: vi.fn() } as never,
     );
@@ -54,21 +58,25 @@ describe("ForecastMapService", () => {
     const result = await service.get("run-1", new Date("2026-07-13T08:40:00Z"));
     const { data, info } = await sharp(result.data).raw().toBuffer({ resolveWithObject: true });
     const header = (18 * info.width + 18) * info.channels;
-    const conditionMarker = (614 * info.width + 696) * info.channels;
-    const pongomaConditionMarker = (546 * info.width + 680) * info.channels;
+    const kemPointMarker = (600 * info.width + 667) * info.channels;
+    const pongomaPointMarker = (531 * info.width + 735) * info.channels;
     const temperatureRegion = data.subarray(
-      (626 * info.width + 722) * info.channels,
-      (642 * info.width + 738) * info.channels,
+      (510 * info.width + 819) * info.channels,
+      (527 * info.width + 874) * info.channels,
     );
 
     expect(database.getForecastMapSnapshot).toHaveBeenCalledWith("run-1", new Date("2026-07-13T08:40:00Z"));
-    expect(coastlineOverlay.apply).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Array));
+    expect(coastlineOverlay.apply).toHaveBeenCalledWith(
+      expect.any(Uint8Array),
+      expect.any(Array),
+      { includeSettlements: false },
+    );
     expect(result.filename).toBe("forecast-map-2026-07-13T09-00-00Z.png");
     expect(result.caption).toContain("E/G: сценарии различаются");
     expect([...data.subarray(header, header + 3)]).not.toEqual([82, 127, 145]);
-    expect([...data.subarray(conditionMarker, conditionMarker + 3)]).not.toEqual([82, 127, 145]);
+    expect([...data.subarray(kemPointMarker, kemPointMarker + 3)]).toEqual([255, 213, 79]);
     expect([...temperatureRegion].some((value) => value < 100)).toBe(true);
-    expect([...data.subarray(pongomaConditionMarker, pongomaConditionMarker + 3)]).not.toEqual([82, 127, 145]);
+    expect([...data.subarray(pongomaPointMarker, pongomaPointMarker + 3)]).toEqual([255, 213, 79]);
 
     const viewport = {
       bbox: [33, 64.5, 35, 66.5] as [number, number, number, number],

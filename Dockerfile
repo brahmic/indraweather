@@ -9,6 +9,7 @@ RUN npm run build
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+ENV XDG_CACHE_HOME=/tmp/.cache
 WORKDIR /app
 COPY certs/russian_trusted_root_ca.crt /usr/local/share/ca-certificates/
 RUN apk add --no-cache ca-certificates ffmpeg font-noto && update-ca-certificates

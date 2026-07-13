@@ -138,13 +138,14 @@ async function readFlashes(
     await h5wasm.ready;
     const file = new h5wasm.File(filePath, "r");
     try {
-      const times = numericVariable(file.get("flash_time"), "flash_time");
-      const latitudes = numericVariable(file.get("latitude"), "latitude");
-      const longitudes = numericVariable(file.get("longitude"), "longitude");
+      const flashTime = findDataset(file, "flash_time");
+      const times = numericVariable(flashTime, "flash_time");
+      const latitudes = numericVariable(findDataset(file, "latitude"), "latitude");
+      const longitudes = numericVariable(findDataset(file, "longitude"), "longitude");
       if (times.values.length !== latitudes.values.length || times.values.length !== longitudes.values.length) {
         throw new Error(`LI product ${name} contains incompatible flash arrays`);
       }
-      const units = stringAttribute(file.get("flash_time"), "units");
+      const units = stringAttribute(flashTime, "units");
       const toDate = createTimeConverter(units);
       const [west, south, east, north] = bbox;
       return times.values.flatMap((value, index): LightningFlash[] => {
@@ -173,6 +174,16 @@ async function readFlashes(
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+function findDataset(
+  file: { get(name: string): unknown; paths(): string[] },
+  name: string,
+): unknown {
+  const direct = file.get(name);
+  if (direct) return direct;
+  const path = file.paths().find((candidate) => candidate.split("/").at(-1) === name);
+  return path ? file.get(path) : null;
 }
 
 interface NumericVariable {

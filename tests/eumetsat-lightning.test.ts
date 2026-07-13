@@ -65,7 +65,8 @@ async function lightningProduct(): Promise<Uint8Array> {
     await h5wasm.ready;
     const file = new h5wasm.File(path, "w");
     try {
-      const times = file.create_dataset({
+      const variables = file.create_group("data");
+      const times = variables.create_dataset({
         name: "flash_time",
         data: new Float64Array([
           secondsSince2000("2026-07-13T10:05:00Z"),
@@ -73,10 +74,10 @@ async function lightningProduct(): Promise<Uint8Array> {
         ]),
       });
       times.create_attribute("units", "seconds since 2000-01-01 00:00:00.0");
-      const latitudes = file.create_dataset({ name: "latitude", data: new Int16Array([23_636, 25_000]) });
+      const latitudes = variables.create_dataset({ name: "latitude", data: new Int16Array([23_636, 25_000]) });
       latitudes.create_attribute("scale_factor", 0.00275);
       latitudes.create_attribute("_FillValue", -32_768);
-      const longitudes = file.create_dataset({ name: "longitude", data: new Uint16Array([12_364, 12_364]) });
+      const longitudes = variables.create_dataset({ name: "longitude", data: new Uint16Array([12_364, 12_364]) });
       longitudes.create_attribute("scale_factor", 0.00275);
       longitudes.create_attribute("_FillValue", 65_535);
     } finally {

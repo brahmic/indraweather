@@ -386,7 +386,8 @@ export class MaxChannel implements DeliveryChannel {
     }
     await this.api.answerCallback(callbackId);
     if (action === "details") await this.sendDetails(userId);
-    else await this.sendClouds(userId);
+    else if (action === "clouds") await this.sendClouds(userId);
+    else await this.sendPointForecastPicker(userId);
   }
 
   private async processHelpCallback(
@@ -529,6 +530,8 @@ export class MaxChannel implements DeliveryChannel {
         buttons: [[
           { type: "callback", text: "🔬 Детали", payload: "bulletin:details" },
           { type: "callback", text: "☁️ Облака", payload: "bulletin:clouds" },
+        ], [
+          { type: "callback", text: "🗓️ Прогноз 5 дней", payload: "bulletin:forecast" },
         ]],
       },
     };
@@ -725,9 +728,9 @@ function parsePointForecastId(payload: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-function parseBulletinAction(payload: string | undefined): "details" | "clouds" | null {
-  return payload === "bulletin:details" || payload === "bulletin:clouds"
-    ? payload.slice("bulletin:".length) as "details" | "clouds"
+function parseBulletinAction(payload: string | undefined): "details" | "clouds" | "forecast" | null {
+  return payload === "bulletin:details" || payload === "bulletin:clouds" || payload === "bulletin:forecast"
+    ? payload.slice("bulletin:".length) as "details" | "clouds" | "forecast"
     : null;
 }
 

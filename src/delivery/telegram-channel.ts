@@ -114,10 +114,7 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("forecast", async (ctx) => {
-      await ctx.reply("<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", {
-        parse_mode: "HTML",
-        reply_markup: this.forecastKeyboard(),
-      });
+      await this.sendPointForecastPicker(ctx.chat.id);
     });
 
     this.bot.command("points", async (ctx) => {
@@ -214,7 +211,7 @@ export class TelegramChannel implements DeliveryChannel {
       }
     });
 
-    this.bot.callbackQuery(/^bulletin:(details|clouds)$/u, async (ctx) => {
+    this.bot.callbackQuery(/^bulletin:(details|clouds|forecast)$/u, async (ctx) => {
       const action = ctx.match[1];
       if (!ctx.chat) {
         await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
@@ -222,7 +219,8 @@ export class TelegramChannel implements DeliveryChannel {
       }
       await ctx.answerCallbackQuery();
       if (action === "details") await this.sendDetails(ctx.chat.id);
-      else await this.sendClouds(ctx.chat.id);
+      else if (action === "clouds") await this.sendClouds(ctx.chat.id);
+      else await this.sendPointForecastPicker(ctx.chat.id);
     });
 
     this.bot.callbackQuery(/^help:(points|status|stop)$/u, async (ctx) => {
@@ -313,6 +311,13 @@ export class TelegramChannel implements DeliveryChannel {
       this.logger.error({ error }, "Detailed model bulletin failed");
       await this.bot.api.sendMessage(chatId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");
     }
+  }
+
+  private async sendPointForecastPicker(chatId: number): Promise<void> {
+    await this.bot.api.sendMessage(chatId, "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", {
+      parse_mode: "HTML",
+      reply_markup: this.forecastKeyboard(),
+    });
   }
 
   private async sendClouds(chatId: number): Promise<void> {
@@ -409,7 +414,9 @@ export class TelegramChannel implements DeliveryChannel {
   private bulletinKeyboard(): InlineKeyboard {
     return new InlineKeyboard()
       .text("🔬 Детали", "bulletin:details")
-      .text("☁️ Облака", "bulletin:clouds");
+      .text("☁️ Облака", "bulletin:clouds")
+      .row()
+      .text("🗓️ Прогноз 5 дней", "bulletin:forecast");
   }
 
   private helpKeyboard(): InlineKeyboard {

@@ -157,7 +157,7 @@ describe("TelegramChannel /weather", () => {
       inline_keyboard: [[
         expect.objectContaining({ callback_data: "bulletin:details" }),
         expect.objectContaining({ callback_data: "bulletin:clouds" }),
-      ]],
+      ], [expect.objectContaining({ callback_data: "bulletin:forecast" })]],
     }));
     expect(publications.getFreshOrRun).toHaveBeenCalledOnce();
   });

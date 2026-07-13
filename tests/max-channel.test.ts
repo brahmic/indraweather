@@ -154,7 +154,7 @@ describe("MaxChannel", () => {
           buttons: [[
             expect.objectContaining({ payload: "bulletin:details" }),
             expect.objectContaining({ payload: "bulletin:clouds" }),
-          ]],
+          ], [expect.objectContaining({ payload: "bulletin:forecast" })]],
         },
       }),
     ]);

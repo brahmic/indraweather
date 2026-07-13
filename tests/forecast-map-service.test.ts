@@ -16,6 +16,14 @@ describe("ForecastMapService", () => {
           pointId: "kem", name: "Кемь", latitude: 65, longitude: 34,
           model: "gfs" as const, speedMs: 9, directionDeg: 230, weatherCode: 61,
         },
+        {
+          pointId: "pongoma", name: "Поньгома", latitude: 65.3446, longitude: 34.409,
+          model: "ecmwf" as const, speedMs: 6, directionDeg: 270, weatherCode: 0,
+        },
+        {
+          pointId: "pongoma", name: "Поньгома", latitude: 65.3446, longitude: 34.409,
+          model: "gfs" as const, speedMs: 7, directionDeg: 275, weatherCode: 0,
+        },
       ],
     };
     const database = { getForecastMapSnapshot: vi.fn(async () => snapshot) };
@@ -41,6 +49,7 @@ describe("ForecastMapService", () => {
     const { data, info } = await sharp(result.data).raw().toBuffer({ resolveWithObject: true });
     const header = (18 * info.width + 18) * info.channels;
     const conditionCard = (614 * info.width + 680) * info.channels;
+    const pongomaConditionCard = (546 * info.width + 680) * info.channels;
 
     expect(database.getForecastMapSnapshot).toHaveBeenCalledWith("run-1", new Date("2026-07-13T08:40:00Z"));
     expect(coastlineOverlay.apply).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Array));
@@ -49,5 +58,6 @@ describe("ForecastMapService", () => {
     expect(result.caption).toContain("E/G: сценарии различаются");
     expect([...data.subarray(header, header + 3)]).not.toEqual([82, 127, 145]);
     expect([...data.subarray(conditionCard, conditionCard + 3)]).not.toEqual([82, 127, 145]);
+    expect([...data.subarray(pongomaConditionCard, pongomaConditionCard + 3)]).not.toEqual([82, 127, 145]);
   });
 });

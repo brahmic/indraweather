@@ -10,7 +10,11 @@ describe("formatHelpHtml", () => {
     expect(text).toContain("<code>/forecast</code>");
     expect(text).toContain("кнопки «Детали», «Облачность» и «Движение облаков»");
     expect(text).toContain("границы моделей, а не среднее значение");
+    expect(text).toContain("При расхождении под точкой приводятся оба сценария моделей");
+    expect(text).toContain("Время динамики и поворота — интервал прогноза");
     expect(text).toContain("<code>/map</code>");
+    expect(text).toContain("На обзорных снимках отмечены все активные контрольные точки");
+    expect(text).toContain("Модельная карта из <code>/details</code> строится по свежему выпуску");
     expect(text).toContain("сама ничего не отправляет");
     expect(text).toContain("после <code>/start</code>");
     expect(text).not.toContain("<code>/points</code>");

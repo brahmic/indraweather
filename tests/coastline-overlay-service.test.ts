@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { CoastlineOverlayService } from "../src/application/coastline-overlay-service.js";
+import { loadControlPoints } from "../src/config.js";
 import type { ControlPoint } from "../src/domain/types.js";
 
 describe("CoastlineOverlayService", () => {
@@ -35,5 +36,33 @@ describe("CoastlineOverlayService", () => {
     expect([...data.subarray(center, center + 3)]).not.toEqual([138, 160, 170]);
     expect([...data.subarray(kemiMarker, kemiMarker + 3)]).not.toEqual([138, 160, 170]);
     expect([...data.subarray(umbaMarker, umbaMarker + 3)]).not.toEqual([138, 160, 170]);
+  });
+
+  it("adds every active configured control point to overview static maps", async () => {
+    const points = await loadControlPoints();
+    const input = await sharp({
+      create: {
+        width: 1000,
+        height: 800,
+        channels: 3,
+        background: "#8aa0aa",
+      },
+    }).png().toBuffer();
+    const service = new CoastlineOverlayService({
+      bbox: [30, 64, 36, 68],
+      width: 1000,
+      height: 800,
+      maxImageBytes: 1_000_000,
+      points,
+    });
+
+    const output = await service.applyContext(input);
+    const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
+    for (const point of points.filter((item) => item.active)) {
+      const x = Math.round((point.longitude - 30) / 6 * info.width);
+      const y = Math.round((68 - point.latitude) / 4 * info.height);
+      const pixel = (y * info.width + x) * info.channels;
+      expect([...data.subarray(pixel, pixel + 3)]).not.toEqual([138, 160, 170]);
+    }
   });
 });

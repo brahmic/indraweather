@@ -481,11 +481,25 @@ export class Database {
   }
 
   async hasWeatherCodeCoverage(runId: string, pointId?: string): Promise<boolean> {
+    if (!pointId) {
+      const result = await this.pool.query<{ available: boolean }>(`
+        SELECT COALESCE(bool_and(EXISTS (
+          SELECT 1
+          FROM forecast_values
+          WHERE run_id = $1
+            AND point_id = control_points.id
+            AND weather_code IS NOT NULL
+        )), false) AS available
+        FROM control_points
+        WHERE active = true
+      `, [runId]);
+      return result.rows[0]?.available ?? false;
+    }
     const result = await this.pool.query<{ available: boolean }>(`
       SELECT COALESCE(bool_and(weather_code IS NOT NULL), false) AS available
       FROM forecast_values
-      WHERE run_id = $1 ${pointId ? "AND point_id = $2" : ""}
-    `, pointId ? [runId, pointId] : [runId]);
+      WHERE run_id = $1 AND point_id = $2
+    `, [runId, pointId]);
     return result.rows[0]?.available ?? false;
   }
 

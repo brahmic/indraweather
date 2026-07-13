@@ -5,12 +5,14 @@ import type {
   BulletinSummary,
   ControlPoint,
   ForecastValue,
+  MarineForecastValue,
   OfficialWarning,
   TideExtreme,
 } from "../domain/types.js";
 
 export interface BulletinRecord {
   id: string;
+  runId: string;
   content: string;
   contentFormat: "plain" | "telegram_html";
   summary: BulletinSummary;
@@ -222,6 +224,41 @@ export class Database {
     }
   }
 
+  async saveMarineForecastValues(runId: string, values: MarineForecastValue[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const value of values) {
+        await client.query(`
+          INSERT INTO marine_forecast_values (
+            run_id, point_id, forecast_at, wave_height_m, wave_direction_deg,
+            wave_period_seconds, wind_wave_height_m, swell_height_m,
+            current_speed_kmh, current_direction_deg, sea_surface_temperature_c
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ON CONFLICT (run_id, point_id, forecast_at) DO NOTHING
+        `, [
+          runId,
+          value.pointId,
+          value.forecastAt,
+          value.waveHeightM,
+          value.waveDirectionDeg,
+          value.wavePeriodSeconds,
+          value.windWaveHeightM,
+          value.swellHeightM,
+          value.currentSpeedKmh,
+          value.currentDirectionDeg,
+          value.seaSurfaceTemperatureC,
+        ]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async replaceActiveWarnings(warnings: OfficialWarning[]): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -328,6 +365,7 @@ export class Database {
   ): Promise<BulletinRecord> {
     const inserted = await this.pool.query<{
       id: string;
+      run_id: string;
       content: string;
       content_format: "plain" | "telegram_html";
       summary: unknown;
@@ -336,21 +374,23 @@ export class Database {
       INSERT INTO bulletins (run_id, kind, dedupe_key, content, content_format, summary)
       VALUES ($1, $2, $3, $4, 'plain', $5::jsonb)
       ON CONFLICT (dedupe_key) DO NOTHING
-      RETURNING id, content, content_format, summary, created_at
+      RETURNING id, run_id, content, content_format, summary, created_at
     `, [runId, kind, dedupeKey, content, JSON.stringify(summary)]);
     const row = inserted.rows[0] ?? (await this.pool.query<{
       id: string;
+      run_id: string;
       content: string;
       content_format: "plain" | "telegram_html";
       summary: unknown;
       created_at: Date;
     }>(`
-      SELECT id, content, content_format, summary, created_at
+      SELECT id, run_id, content, content_format, summary, created_at
       FROM bulletins WHERE dedupe_key = $1
     `, [dedupeKey])).rows[0];
     if (!row) throw new Error("Failed to save or load bulletin");
     return {
       id: row.id,
+      runId: row.run_id,
       content: row.content,
       contentFormat: row.content_format,
       summary: reviveSummary(row.summary),
@@ -361,22 +401,107 @@ export class Database {
   async getLatestBulletin(): Promise<BulletinRecord | null> {
     const result = await this.pool.query<{
       id: string;
+      run_id: string;
       content: string;
       content_format: "plain" | "telegram_html";
       summary: unknown;
       created_at: Date;
     }>(`
-      SELECT id, content, content_format, summary, created_at
+      SELECT id, run_id, content, content_format, summary, created_at
       FROM bulletins ORDER BY created_at DESC LIMIT 1
     `);
     const row = result.rows[0];
     return row ? {
       id: row.id,
+      runId: row.run_id,
       content: row.content,
       contentFormat: row.content_format,
       summary: reviveSummary(row.summary),
       createdAt: row.created_at,
     } : null;
+  }
+
+  async getForecastValues(runId: string, pointId: string): Promise<ForecastValue[]> {
+    const result = await this.pool.query<{
+      point_id: string;
+      model: "ecmwf" | "gfs";
+      forecast_at: Date;
+      received_at: Date;
+      wind_speed_ms: number | null;
+      wind_gust_ms: number | null;
+      wind_direction_deg: number | null;
+      precipitation_mm: number | null;
+      precipitation_probability_pct: number | null;
+      visibility_km: number | null;
+      pressure_hpa: number | null;
+      temperature_c: number | null;
+    }>(`
+      SELECT point_id, model, forecast_at, received_at, wind_speed_ms, wind_gust_ms,
+             wind_direction_deg, precipitation_mm, precipitation_probability_pct,
+             visibility_km, pressure_hpa, temperature_c
+      FROM forecast_values
+      WHERE run_id = $1 AND point_id = $2
+      ORDER BY forecast_at, model
+    `, [runId, pointId]);
+    return result.rows.map((row) => ({
+      pointId: row.point_id,
+      model: row.model,
+      forecastAt: row.forecast_at,
+      receivedAt: row.received_at,
+      windSpeedMs: row.wind_speed_ms,
+      windGustMs: row.wind_gust_ms,
+      windDirectionDeg: row.wind_direction_deg,
+      precipitationMm: row.precipitation_mm,
+      precipitationProbabilityPct: row.precipitation_probability_pct,
+      visibilityKm: row.visibility_km,
+      pressureHpa: row.pressure_hpa,
+      temperatureC: row.temperature_c,
+    }));
+  }
+
+  async hasForecastCoverage(runId: string, pointId: string, at: Date): Promise<boolean> {
+    const result = await this.pool.query<{ available: boolean }>(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM forecast_values
+        WHERE run_id = $1 AND point_id = $2 AND forecast_at >= $3
+      ) AS available
+    `, [runId, pointId, at]);
+    return result.rows[0]?.available ?? false;
+  }
+
+  async getMarineForecastValues(runId: string, pointId: string): Promise<MarineForecastValue[]> {
+    const result = await this.pool.query<{
+      point_id: string;
+      forecast_at: Date;
+      wave_height_m: number | null;
+      wave_direction_deg: number | null;
+      wave_period_seconds: number | null;
+      wind_wave_height_m: number | null;
+      swell_height_m: number | null;
+      current_speed_kmh: number | null;
+      current_direction_deg: number | null;
+      sea_surface_temperature_c: number | null;
+    }>(`
+      SELECT point_id, forecast_at, wave_height_m, wave_direction_deg,
+             wave_period_seconds, wind_wave_height_m, swell_height_m,
+             current_speed_kmh, current_direction_deg, sea_surface_temperature_c
+      FROM marine_forecast_values
+      WHERE run_id = $1 AND point_id = $2
+      ORDER BY forecast_at
+    `, [runId, pointId]);
+    return result.rows.map((row) => ({
+      pointId: row.point_id,
+      forecastAt: row.forecast_at,
+      waveHeightM: row.wave_height_m,
+      waveDirectionDeg: row.wave_direction_deg,
+      wavePeriodSeconds: row.wave_period_seconds,
+      windWaveHeightM: row.wind_wave_height_m,
+      swellHeightM: row.swell_height_m,
+      currentSpeedKmh: row.current_speed_kmh,
+      currentDirectionDeg: row.current_direction_deg,
+      seaSurfaceTemperatureC: row.sea_surface_temperature_c,
+    }));
   }
 
   async getLastSuccessfulUpdate(): Promise<Date | null> {

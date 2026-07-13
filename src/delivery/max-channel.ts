@@ -207,7 +207,15 @@ export class MaxChannel implements DeliveryChannel {
       return;
     }
     if (update.update_type === "message_callback") {
-      await this.processMapCallback(update.callback.callback_id, update.callback.payload, update.callback.user.user_id);
+      if (parseMapAction(update.callback.payload)) {
+        await this.processMapCallback(update.callback.callback_id, update.callback.payload, update.callback.user.user_id);
+      } else {
+        await this.processPointForecastCallback(
+          update.callback.callback_id,
+          update.callback.payload,
+          update.callback.user.user_id,
+        );
+      }
       return;
     }
     const sender = update.message.sender;
@@ -230,6 +238,9 @@ export class MaxChannel implements DeliveryChannel {
         break;
       case "details":
         await this.sendText(sender.user_id, await this.publications.getFreshDetails());
+        break;
+      case "forecast":
+        await this.sendPointForecastPicker(sender.user_id);
         break;
       case "points":
         await this.sendPoints(sender.user_id);
@@ -299,6 +310,38 @@ export class MaxChannel implements DeliveryChannel {
     } catch (error) {
       this.logger.warn({ err: error, userId }, "MAX map request failed");
       await this.api.sendMessage(userId, "Карту сейчас получить не удалось. Попробуйте ещё раз через минуту.");
+    }
+  }
+
+  private async sendPointForecastPicker(userId: number): Promise<void> {
+    await this.api.sendMessage(userId, "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", [
+      this.forecastKeyboard(),
+    ]);
+  }
+
+  private async processPointForecastCallback(
+    callbackId: string,
+    payload: string | undefined,
+    userId: number,
+  ): Promise<void> {
+    const pointId = parsePointForecastId(payload);
+    const point = pointId
+      ? this.points.find((item) => item.id === pointId && item.active)
+      : undefined;
+    if (!point) {
+      await this.api.answerCallback(callbackId, undefined, "Точка больше не активна.");
+      return;
+    }
+    await this.api.answerCallback(callbackId, {
+      text: `⏳ Готовлю прогноз для ${point.shortName}…`,
+      attachments: [],
+    });
+    try {
+      const content = await this.publications.getPointForecast(point.id);
+      await this.api.sendMessage(userId, formatPostHtml(content, this.points.map((item) => item.name), true));
+    } catch (error) {
+      this.logger.error({ error, pointId }, "MAX point forecast request failed");
+      await this.api.sendMessage(userId, "Не удалось подготовить пятидневный прогноз. Попробуйте ещё раз через минуту.");
     }
   }
 
@@ -394,6 +437,22 @@ export class MaxChannel implements DeliveryChannel {
             { type: "callback", text: "+", payload: "map:zoom-in" },
           ],
         ],
+      },
+    };
+  }
+
+  private forecastKeyboard(): MaxMessageAttachment {
+    const points = this.points.filter((point) => point.active);
+    return {
+      type: "inline_keyboard",
+      payload: {
+        buttons: Array.from({ length: Math.ceil(points.length / 2) }, (_, row) =>
+          points.slice(row * 2, row * 2 + 2).map((point) => ({
+            type: "callback" as const,
+            text: point.shortName,
+            payload: `forecast:${point.id}`,
+          })),
+        ),
       },
     };
   }
@@ -561,6 +620,11 @@ function parseMapAction(payload: string | undefined): MapViewportAction | null {
     default:
       return null;
   }
+}
+
+function parsePointForecastId(payload: string | undefined): string | null {
+  const match = /^forecast:([a-z0-9-]+)$/u.exec(payload ?? "");
+  return match?.[1] ?? null;
 }
 
 function parseRecipientId(value: string): number {

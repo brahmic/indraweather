@@ -7,6 +7,7 @@ export function formatPostHtml(
 ): string {
   return content.split("\n").map((line, index) => {
     if (!line) return "";
+    if (includeTitle && line.startsWith("Прогноз на 5 дней")) return `🗓️ <b>${escapeHtml(line)}</b>`;
     if (includeTitle && index === 0) return `🌊 <b>${escapeHtml(line)}</b>`;
     if (line === "Волна и вода") return `🌊 <b>${escapeHtml(line)}</b>`;
 
@@ -47,9 +48,12 @@ function formatLabel(line: string): string | null {
     ["Детальный снимок Sentinel-3 пропущен:", "🛰️"],
     ["Подробности по моделям:", "🔬"],
     ["Период:", "🗓️"],
+    ["Обновлено:", "🕒"],
+    ["День:", "🗓️"],
     ["ECMWF:", "  •"],
     ["GFS:", "  •"],
     ["Расхождение:", "  ↔"],
+    ["Море:", "  🌊"],
     ["Итог сравнения:", "📊"],
     ["Источники", "ℹ️", true],
     ["Погода:", "  •"],

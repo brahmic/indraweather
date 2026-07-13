@@ -157,6 +157,76 @@ describe("TelegramChannel /weather", () => {
   });
 });
 
+describe("TelegramChannel /forecast", () => {
+  it("shows point buttons and replaces the selection with a five-day forecast", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getPointForecast: vi.fn(async () => [
+        "Прогноз на 5 дней · Умба",
+        "Обновлено: 11 июля, 12:00 МСК",
+        "День: Суббота, 11 июля",
+        "ECMWF: ветер 4–8 м/с.",
+        "GFS: ветер 5–10 м/с.",
+      ].join("\n")),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      {} as never,
+      publications as never,
+      [{
+        id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true,
+      }],
+      {
+        timeZone: "Europe/Moscow",
+        satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 },
+      } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: method === "answerCallbackQuery" ? true : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/forecast", 8));
+    await channel.bot.handleUpdate({
+      update_id: 9,
+      callback_query: {
+        id: "callback-1",
+        from: { id: 123, is_bot: false, first_name: "User" },
+        chat_instance: "chat-instance",
+        data: "forecast:umba",
+        message: {
+          message_id: 11,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private", first_name: "User" },
+          text: "Прогноз на 5 дней",
+        },
+      },
+    });
+
+    expect(calls[0]?.body.reply_markup).toEqual(expect.objectContaining({
+      inline_keyboard: [[expect.objectContaining({ callback_data: "forecast:umba" })]],
+    }));
+    expect(publications.getPointForecast).toHaveBeenCalledWith("umba");
+    expect(calls.map((call) => call.method)).toEqual([
+      "sendMessage",
+      "answerCallbackQuery",
+      "editMessageText",
+      "editMessageText",
+    ]);
+    expect(calls.at(-1)?.body.text).toContain("<b>Прогноз на 5 дней · Умба</b>");
+  });
+});
+
 describe("TelegramChannel /map", () => {
   it("sends the current satellite image with map controls", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];

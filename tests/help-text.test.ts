@@ -7,6 +7,7 @@ describe("formatHelpHtml", () => {
 
     expect(text).toContain("05:00, 11:00, 17:00, 23:00 МСК");
     expect(text).toContain("<code>/weather</code>");
+    expect(text).toContain("<code>/forecast</code>");
     expect(text).toContain("границы моделей, а не среднее значение");
     expect(text).toContain("<code>/map</code>");
     expect(text).toContain("сама ничего не отправляет");

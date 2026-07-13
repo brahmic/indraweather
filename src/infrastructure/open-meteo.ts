@@ -34,6 +34,7 @@ export class OpenMeteoClient {
     model: WeatherModel,
     point: ControlPoint,
     now = new Date(),
+    horizonHours = 48,
   ): Promise<ForecastValue[]> {
     const url = new URL(endpoints[model]);
     url.searchParams.set("latitude", String(point.latitude));
@@ -52,13 +53,13 @@ export class OpenMeteoClient {
     url.searchParams.set("wind_speed_unit", "ms");
     url.searchParams.set("precipitation_unit", "mm");
     url.searchParams.set("timezone", "GMT");
-    url.searchParams.set("forecast_days", "3");
+    url.searchParams.set("forecast_hours", String(horizonHours));
     url.searchParams.set("cell_selection", "sea");
 
     const raw = await fetchJson(url, this.options);
     const { hourly } = responseSchema.parse(raw);
     const receivedAt = new Date();
-    const horizonEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    const horizonEnd = new Date(now.getTime() + horizonHours * 60 * 60 * 1000);
 
     return hourly.time.flatMap((time, index) => {
       const forecastAt = new Date(`${time}Z`);

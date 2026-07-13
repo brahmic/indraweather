@@ -7,6 +7,7 @@ import { RadarService } from "./application/radar-service.js";
 import { DeliveryService } from "./application/delivery-service.js";
 import { DetailedSatelliteService } from "./application/detailed-satellite-service.js";
 import { PublicationService } from "./application/publication-service.js";
+import { PointForecastService } from "./application/point-forecast-service.js";
 import {
   PersonalAnimationService,
   type PersonalAnimationSource,
@@ -288,6 +289,7 @@ const bulletinService = new BulletinService(
   logger,
   () => scheduler?.nextRun() ?? null,
 );
+const pointForecasts = new PointForecastService(database, bulletinService, points, config);
 const publicationService = new PublicationService(
   bulletinService,
   satellite,
@@ -296,6 +298,7 @@ const publicationService = new PublicationService(
   cloudDiagnostics,
   cloudAnimation,
   radar,
+  pointForecasts,
   config.timeZone,
   logger,
 );

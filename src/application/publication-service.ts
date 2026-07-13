@@ -13,6 +13,7 @@ import type { BulletinRecord } from "../infrastructure/database.js";
 import type { Logger } from "../logger.js";
 import type { MapViewport } from "../domain/map-viewport.js";
 import { renderModelDetails } from "../domain/model-details.js";
+import type { PointForecastService } from "./point-forecast-service.js";
 
 export class PublicationService {
   constructor(
@@ -23,6 +24,7 @@ export class PublicationService {
     private readonly clouds: CloudDiagnosticService | null,
     private readonly cloudAnimation: CloudAnimationService | null,
     private readonly radar: RadarService | null,
+    private readonly pointForecasts: PointForecastService,
     private readonly timeZone: string,
     private readonly logger: Logger,
   ) {}
@@ -39,6 +41,10 @@ export class PublicationService {
   async getFreshDetails(): Promise<string> {
     const bulletin = await this.bulletins.getFreshOrRun();
     return renderModelDetails(bulletin.summary, this.timeZone);
+  }
+
+  async getPointForecast(pointId: string): Promise<string> {
+    return this.pointForecasts.get(pointId);
   }
 
   async getClouds(viewport?: MapViewport, includeAnimation = true): Promise<DeliveryAttachment[]> {

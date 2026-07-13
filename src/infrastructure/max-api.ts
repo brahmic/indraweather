@@ -58,6 +58,7 @@ export class MaxApiClient {
         { name: "stop", description: "Отключить уведомления" },
         { name: "weather", description: "Актуальный бюллетень" },
         { name: "details", description: "ECMWF и GFS отдельно" },
+        { name: "forecast", description: "Прогноз на 5 дней" },
         { name: "points", description: "Контрольные точки" },
       { name: "status", description: "Статус обновления" },
       { name: "clouds", description: "Диагностика облаков" },

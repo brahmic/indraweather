@@ -41,6 +41,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "stop", description: "Отключить уведомления" },
       { command: "weather", description: "Актуальный бюллетень" },
       { command: "details", description: "ECMWF и GFS отдельно" },
+      { command: "forecast", description: "Прогноз на 5 дней" },
       { command: "points", description: "Контрольные точки" },
       { command: "status", description: "Статус обновления" },
       { command: "clouds", description: "Диагностика облаков" },
@@ -111,6 +112,13 @@ export class TelegramChannel implements DeliveryChannel {
         this.logger.error({ error }, "Detailed model bulletin failed");
         await ctx.reply("Не удалось сформировать детализацию: погодные данные временно недоступны.");
       }
+    });
+
+    this.bot.command("forecast", async (ctx) => {
+      await ctx.reply("<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", {
+        parse_mode: "HTML",
+        reply_markup: this.forecastKeyboard(),
+      });
     });
 
     this.bot.command("points", async (ctx) => {
@@ -194,6 +202,32 @@ export class TelegramChannel implements DeliveryChannel {
       } catch (error) {
         this.logger.warn({ err: error }, "Map update failed");
         await ctx.reply("Карту сейчас обновить не удалось. Попробуйте ещё раз через минуту.");
+      }
+    });
+
+    this.bot.callbackQuery(/^forecast:([a-z0-9-]+)$/u, async (ctx) => {
+      const pointId = ctx.match[1];
+      const point = this.points.find((item) => item.id === pointId && item.active);
+      if (!point) {
+        await ctx.answerCallbackQuery({ text: "Точка больше не активна." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      try {
+        await ctx.editMessageText(`⏳ Готовлю прогноз для ${point.shortName}…`, {
+          reply_markup: { inline_keyboard: [] },
+        });
+        const content = await this.publications.getPointForecast(point.id);
+        await ctx.editMessageText(formatTelegramPost(content, this.points.map((item) => item.name)), {
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+          reply_markup: { inline_keyboard: [] },
+        });
+      } catch (error) {
+        this.logger.error({ error, pointId }, "Point forecast request failed");
+        await ctx.editMessageText("Не удалось подготовить пятидневный прогноз. Попробуйте ещё раз через минуту.", {
+          reply_markup: { inline_keyboard: [] },
+        }).catch(() => undefined);
       }
     });
 
@@ -303,6 +337,15 @@ export class TelegramChannel implements DeliveryChannel {
       .row()
       .text("−", "map:zoom-out")
       .text("+", "map:zoom-in");
+  }
+
+  private forecastKeyboard(): InlineKeyboard {
+    const keyboard = new InlineKeyboard();
+    for (const [index, point] of this.points.filter((item) => item.active).entries()) {
+      keyboard.text(point.shortName, `forecast:${point.id}`);
+      if (index % 2 === 1) keyboard.row();
+    }
+    return keyboard;
   }
 
   private mapCaption(caption: string, viewport: MapViewport): string {

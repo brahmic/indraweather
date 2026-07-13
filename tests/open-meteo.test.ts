@@ -31,7 +31,7 @@ describe("OpenMeteoClient", () => {
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new OpenMeteoClient({ timeoutMs: 1000, retries: 0 });
-    const values = await client.getForecast("gfs", point, new Date("2026-07-11T00:30:00Z"));
+    const values = await client.getForecast("gfs", point, new Date("2026-07-11T00:30:00Z"), 120);
 
     expect(values).toHaveLength(2);
     expect(values[0]?.forecastAt.toISOString()).toBe("2026-07-11T01:00:00.000Z");
@@ -41,5 +41,6 @@ describe("OpenMeteoClient", () => {
     expect(calledUrl.pathname).toBe("/v1/gfs");
     expect(calledUrl.searchParams.get("cell_selection")).toBe("sea");
     expect(calledUrl.searchParams.get("timezone")).toBe("GMT");
+    expect(calledUrl.searchParams.get("forecast_hours")).toBe("120");
   });
 });

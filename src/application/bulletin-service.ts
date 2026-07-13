@@ -6,9 +6,17 @@ import type { OpenMeteoMarineClient } from "../infrastructure/open-meteo-marine.
 import type { StormglassClient } from "../infrastructure/stormglass.js";
 import type { KolgimetClient } from "../infrastructure/kolgimet.js";
 import type { AppConfig } from "../config.js";
-import type { ControlPoint, ForecastValue, MarinePointSummary, WeatherModel } from "../domain/types.js";
+import type {
+  ControlPoint,
+  ForecastValue,
+  MarineForecastValue,
+  MarinePointSummary,
+  WeatherModel,
+} from "../domain/types.js";
 import type { Logger } from "../logger.js";
 import { WEATHER_MODELS } from "../domain/types.js";
+import { POINT_FORECAST_HOURS } from "../domain/point-forecast.js";
+import { summarizeMarine } from "../infrastructure/open-meteo-marine.js";
 
 export interface RunBulletinOptions {
   kind: "scheduled" | "manual";
@@ -28,11 +36,16 @@ export class BulletinService {
     private readonly nextScheduledAt: () => Date | null,
   ) {}
 
-  async getFreshOrRun(): Promise<BulletinRecord> {
+  async getFreshOrRun(requiredForecastHours = 48, pointId?: string): Promise<BulletinRecord> {
     const latest = await this.database.getLatestBulletin();
     const freshnessMs = this.config.freshForecastMinutes * 60_000;
     if (latest?.contentFormat === "plain"
-      && Date.now() - latest.createdAt.getTime() <= freshnessMs) return latest;
+      && Date.now() - latest.createdAt.getTime() <= freshnessMs
+      && (!pointId || await this.database.hasForecastCoverage(
+        latest.runId,
+        pointId,
+        new Date(Date.now() + Math.max(0, requiredForecastHours - 2) * 60 * 60 * 1000),
+      ))) return latest;
     const generated = await this.run({ kind: "manual" });
     if (generated) return generated;
     const fallback = await this.database.getLatestBulletin();
@@ -53,7 +66,7 @@ export class BulletinService {
       const requests = activePoints.flatMap((point) =>
         WEATHER_MODELS.map((model) => ({ point, model })));
       const settled = await Promise.allSettled(requests.map(({ point, model }) =>
-        this.weather.getForecast(model, point, startedAt)));
+        this.weather.getForecast(model, point, startedAt, POINT_FORECAST_HOURS)));
       const values: ForecastValue[] = [];
       const successfulModels = new Set<WeatherModel>();
       const successfulPoints: Record<WeatherModel, number> = { ecmwf: 0, gfs: 0 };
@@ -77,7 +90,7 @@ export class BulletinService {
 
       const warningResult = await this.loadWarnings(errors);
       const tideValues = await this.loadTides(startedAt, errors);
-      const marineResult = await this.loadMarine(activePoints, errors);
+      const marineResult = await this.loadMarine(activePoints, startedAt, run.id, errors);
       const previousSummary = options.kind === "scheduled"
         ? await this.database.getPreviousScheduledSummary()
         : null;
@@ -163,18 +176,33 @@ export class BulletinService {
     return cached;
   }
 
-  private async loadMarine(points: ControlPoint[], errors: string[]) {
-    const settled = await Promise.allSettled(points.map((point) => this.marine.getSummary(point)));
+  private async loadMarine(
+    points: ControlPoint[],
+    now: Date,
+    runId: string,
+    errors: string[],
+  ) {
+    const settled = await Promise.allSettled(points.map((point) =>
+      this.marine.getForecast(point, now, POINT_FORECAST_HOURS)));
     const values: MarinePointSummary[] = [];
+    const forecasts: MarineForecastValue[] = [];
     for (const [index, result] of settled.entries()) {
-      if (result.status === "fulfilled") values.push(result.value);
-      else {
+      if (result.status === "fulfilled") {
+        const point = points[index];
+        if (!point) continue;
+        forecasts.push(...result.value);
+        values.push(summarizeMarine(
+          point,
+          result.value.filter((value) => value.forecastAt <= new Date(now.getTime() + 24 * 60 * 60 * 1000)),
+        ));
+      } else {
         const point = points[index];
         const message = `Marine/${point?.id ?? "unknown"}: ${errorMessage(result.reason)}`;
         errors.push(message);
         this.logger.warn({ error: message }, "Marine forecast request failed");
       }
     }
+    await this.database.saveMarineForecastValues(runId, forecasts);
     return { values, unavailable: values.length === 0 };
   }
 }

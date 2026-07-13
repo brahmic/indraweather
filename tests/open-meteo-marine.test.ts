@@ -7,6 +7,7 @@ describe("OpenMeteoMarineClient", () => {
   it("summarises waves, current, and sea surface temperature for one point", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       hourly: {
+        time: ["2026-07-11T01:00", "2026-07-11T02:00", "2026-07-11T03:00"],
         wave_height: [0.2, 0.7, 0.4],
         wave_direction: [90, 120, 140],
         wave_period: [2, 4, 3],
@@ -21,7 +22,7 @@ describe("OpenMeteoMarineClient", () => {
 
     const result = await client.getSummary({
       id: "kem", name: "Кемь", shortName: "Кемь", latitude: 65, longitude: 34, order: 1, active: true,
-    });
+    }, new Date("2026-07-11T00:30:00Z"));
 
     expect(result).toMatchObject({
       minWaveHeightM: 0.2,

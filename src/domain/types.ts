@@ -56,6 +56,19 @@ export interface MarinePointSummary {
   seaSurfaceTemperatureC: number | null;
 }
 
+export interface MarineForecastValue {
+  pointId: string;
+  forecastAt: Date;
+  waveHeightM: number | null;
+  waveDirectionDeg: number | null;
+  wavePeriodSeconds: number | null;
+  windWaveHeightM: number | null;
+  swellHeightM: number | null;
+  currentSpeedKmh: number | null;
+  currentDirectionDeg: number | null;
+  seaSurfaceTemperatureC: number | null;
+}
+
 export interface ModelSummary {
   model: WeatherModel;
   minWindMs: number;

@@ -189,6 +189,64 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
+  it("sends a five-day forecast after the selected MAX control point callback", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-forecast",
+        attempts: 1,
+        payload: messageUpdate("/forecast"),
+      } as never)
+      .mockResolvedValueOnce({
+        fingerprint: "event-forecast-callback",
+        attempts: 1,
+        payload: {
+          update_type: "message_callback",
+          timestamp: 1,
+          callback: {
+            timestamp: 1,
+            callback_id: "callback-forecast",
+            payload: "forecast:umba",
+            user: { user_id: 42, is_bot: false },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = {
+      getPointForecast: vi.fn(async () => "Прогноз на 5 дней · Умба\nДень: Суббота, 11 июля"),
+    };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [{
+        id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true,
+      }],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-forecast-callback"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Выберите контрольную точку"), [
+      expect.objectContaining({
+        type: "inline_keyboard",
+        payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
+      }),
+    ]);
+    expect(api.answerCallback).toHaveBeenCalledWith("callback-forecast", {
+      text: "⏳ Готовлю прогноз для Умба…",
+      attachments: [],
+    });
+    expect(publications.getPointForecast).toHaveBeenCalledWith("umba");
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>Прогноз на 5 дней · Умба</b>"));
+    await channel.stop();
+  });
+
   it("updates the same MAX map message through a callback", async () => {
     const database = databaseStub();
     database.claimMaxWebhook

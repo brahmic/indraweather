@@ -71,6 +71,7 @@ describe("PublicationService", () => {
       null,
       null,
       null,
+      { get: async () => "point forecast" } as never,
       "Europe/Moscow",
       { warn: () => undefined } as never,
     );
@@ -91,6 +92,7 @@ describe("PublicationService", () => {
       { getLatest: async () => image } as never,
       { getLatest: async () => animation } as never,
       null,
+      { get: async () => "point forecast" } as never,
       "Europe/Moscow",
       { warn: () => undefined } as never,
     );

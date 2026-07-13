@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EumetsatLightningClient } from "../src/infrastructure/eumetsat-lightning.js";
 
@@ -8,7 +9,7 @@ describe("EumetsatLightningClient", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("decodes scaled NetCDF coordinates and keeps only the requested interval and map extent", async () => {
-    const product = await lightningProduct();
+    const product = await lightningArchive();
     const fetch = vi.fn(async (input: URL | string) => {
       const url = String(input);
       if (url.startsWith("https://api.example/search")) {
@@ -84,6 +85,26 @@ async function lightningProduct(): Promise<Uint8Array> {
       file.close();
     }
     return new Uint8Array(await readFile(path));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function lightningArchive(): Promise<Uint8Array> {
+  const body = await lightningProduct();
+  const directory = await mkdtemp(join(tmpdir(), "indra-li-header-test-"));
+  const path = join(directory, "header.nc");
+  try {
+    const h5wasm = await import("h5wasm/node");
+    await h5wasm.ready;
+    const header = new h5wasm.File(path, "w");
+    header.create_dataset({ name: "metadata", data: [1] });
+    header.close();
+    const headerData = new Uint8Array(await readFile(path));
+    return zipSync({
+      "W_XX-EUMETSAT-HEADER-NC4E.nc": headerData,
+      "W_XX-EUMETSAT-LI-2-LFL--FD--CHK-BODY--ARC-NC4E.nc": body,
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

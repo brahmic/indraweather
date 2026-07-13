@@ -93,7 +93,7 @@ export class EumetsatLightningClient {
     }, this.options.maxProductBytes);
     const files = extractNetcdfFiles(result.data);
     const flashes: LightningFlash[] = [];
-    for (const file of files) {
+    for (const file of lightningDataFiles(files)) {
       flashes.push(...await readFlashes(file.name, file.data, bbox));
     }
     return flashes;
@@ -182,8 +182,11 @@ function findDataset(
 ): unknown {
   const direct = file.get(name);
   if (direct) return direct;
-  const path = file.paths().find((candidate) => candidate.split("/").at(-1) === name);
-  return path ? file.get(path) : null;
+  const paths = file.paths();
+  const path = paths.find((candidate) => candidate.split("/").at(-1) === name);
+  if (path) return file.get(path);
+  const available = paths.slice(0, 24).join(", ") || "none";
+  throw new Error(`LI product is missing ${name}; available paths: ${available}`);
 }
 
 interface NumericVariable {
@@ -277,6 +280,15 @@ function extractNetcdfFiles(data: Uint8Array): Array<{ name: string; data: Uint8
     .map(([name, value]) => ({ name: name.replaceAll("/", "_"), data: value }));
   if (files.length === 0) throw new Error("EUMETSAT LI ZIP contains no NetCDF-4 files");
   return files;
+}
+
+function lightningDataFiles(
+  files: Array<{ name: string; data: Uint8Array }>,
+): Array<{ name: string; data: Uint8Array }> {
+  // A Data Store SIP can contain header/trailer NetCDF files as well as the
+  // actual LI body. Only BODY carries the flash arrays.
+  const bodyFiles = files.filter(({ name }) => /(?:^|[-_])BODY(?:[-_.]|$)/iu.test(name));
+  return bodyFiles.length > 0 ? bodyFiles : files;
 }
 
 function isHdf5(data: Uint8Array): boolean {

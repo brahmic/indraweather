@@ -409,12 +409,25 @@ export class MaxChannel implements DeliveryChannel {
       await this.api.answerCallback(callbackId, undefined, "Кнопка больше не актуальна.");
       return;
     }
-    await this.api.answerCallback(callbackId);
+    if (action === "forecast") {
+      await this.api.answerCallback(callbackId, {
+        text: "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.",
+        attachments: [this.forecastKeyboard()],
+      });
+      return;
+    }
+    const title = action === "weather"
+      ? "⏳ Запрашиваю бюллетень…"
+      : action === "points"
+      ? "⏳ Загружаю контрольные точки…"
+      : action === "status"
+      ? "⏳ Проверяю статус обновления…"
+      : "⏳ Отключаю автоматические уведомления…";
+    await this.api.answerCallback(callbackId, { text: title, attachments: [] });
     if (action === "points") await this.sendPoints(userId);
     else if (action === "status") await this.sendStatus(userId);
     else if (action === "stop") await this.stopSubscription(userId);
-    else if (action === "weather") await this.sendWeather(userId);
-    else await this.sendPointForecastPicker(userId);
+    else await this.sendWeather(userId);
   }
 
   private async processMapCallback(

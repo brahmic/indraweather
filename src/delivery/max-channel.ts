@@ -215,6 +215,12 @@ export class MaxChannel implements DeliveryChannel {
           update.callback.payload,
           update.callback.user.user_id,
         );
+      } else if (parseHelpAction(update.callback.payload)) {
+        await this.processHelpCallback(
+          update.callback.callback_id,
+          update.callback.payload,
+          update.callback.user.user_id,
+        );
       } else {
         await this.processPointForecastCallback(
           update.callback.callback_id,
@@ -233,11 +239,10 @@ export class MaxChannel implements DeliveryChannel {
         await this.subscribeAndWelcome(sender.user_id);
         break;
       case "stop":
-        await this.database.unsubscribe(this.id, String(sender.user_id));
-        await this.api.sendMessage(sender.user_id, "Автоматические уведомления отключены. Возобновить: /start");
+        await this.stopSubscription(sender.user_id);
         break;
       case "help":
-        await this.api.sendMessage(sender.user_id, formatHelpHtml(this.config.scheduleTimes));
+        await this.api.sendMessage(sender.user_id, formatHelpHtml(this.config.scheduleTimes), [this.helpKeyboard()]);
         break;
       case "weather":
         await this.sendWeather(sender.user_id);
@@ -272,7 +277,7 @@ export class MaxChannel implements DeliveryChannel {
 
   private async subscribeAndWelcome(userId: number): Promise<void> {
     await this.database.subscribe(this.id, String(userId));
-    await this.api.sendMessage(userId, formatHelpHtml(this.config.scheduleTimes, true));
+    await this.api.sendMessage(userId, formatHelpHtml(this.config.scheduleTimes, true), [this.helpKeyboard()]);
   }
 
   private async sendWeather(userId: number): Promise<void> {
@@ -295,13 +300,22 @@ export class MaxChannel implements DeliveryChannel {
   }
 
   private async sendClouds(userId: number): Promise<void> {
-    const map = await this.getMapSelection(userId);
-    const sent = await this.sendDiagnostic(
-      userId,
-      () => this.publications.getClouds(map.viewport, !map.isCustom),
-      "Диагностический снимок облаков временно недоступен.",
-    );
-    if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", userId, map.viewport);
+    const progressId = await this.api.sendMessage(userId, "⏳ Собираю информацию об облачности…");
+    try {
+      const map = await this.getMapSelection(userId);
+      const sent = await this.sendDiagnostic(
+        userId,
+        () => this.publications.getClouds(map.viewport, !map.isCustom),
+        "Диагностический снимок облаков временно недоступен.",
+      );
+      if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", userId, map.viewport);
+    } catch (error) {
+      this.logger.error({ error }, "MAX cloud diagnostic request failed");
+      await this.api.sendMessage(userId, "Диагностический снимок облаков временно недоступен.");
+    } finally {
+      await this.api.deleteMessage(progressId).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove MAX clouds progress message"));
+    }
   }
 
   private async sendDetails(userId: number): Promise<void> {
@@ -375,6 +389,22 @@ export class MaxChannel implements DeliveryChannel {
     else await this.sendClouds(userId);
   }
 
+  private async processHelpCallback(
+    callbackId: string,
+    payload: string | undefined,
+    userId: number,
+  ): Promise<void> {
+    const action = parseHelpAction(payload);
+    if (!action) {
+      await this.api.answerCallback(callbackId, undefined, "Кнопка больше не актуальна.");
+      return;
+    }
+    await this.api.answerCallback(callbackId);
+    if (action === "points") await this.sendPoints(userId);
+    else if (action === "status") await this.sendStatus(userId);
+    else await this.stopSubscription(userId);
+  }
+
   private async processMapCallback(
     callbackId: string,
     payload: string | undefined,
@@ -426,6 +456,11 @@ export class MaxChannel implements DeliveryChannel {
       }).format(updatedAt)} МСК`
       : "успешных обновлений ещё не было";
     await this.api.sendMessage(userId, `Последнее успешное обновление: ${text}.`);
+  }
+
+  private async stopSubscription(userId: number): Promise<void> {
+    await this.database.unsubscribe(this.id, String(userId));
+    await this.api.sendMessage(userId, "Автоматические уведомления отключены. Возобновить: /start");
   }
 
   private async getMapSelection(userId: number): Promise<{ viewport: MapViewport; isCustom: boolean }> {
@@ -495,6 +530,21 @@ export class MaxChannel implements DeliveryChannel {
           { type: "callback", text: "🔬 Детали", payload: "bulletin:details" },
           { type: "callback", text: "☁️ Облака", payload: "bulletin:clouds" },
         ]],
+      },
+    };
+  }
+
+  private helpKeyboard(): MaxMessageAttachment {
+    return {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [
+            { type: "callback", text: "📍 Точки", payload: "help:points" },
+            { type: "callback", text: "🕒 Статус", payload: "help:status" },
+          ],
+          [{ type: "callback", text: "⏹ Отключить", payload: "help:stop" }],
+        ],
       },
     };
   }
@@ -678,6 +728,12 @@ function parsePointForecastId(payload: string | undefined): string | null {
 function parseBulletinAction(payload: string | undefined): "details" | "clouds" | null {
   return payload === "bulletin:details" || payload === "bulletin:clouds"
     ? payload.slice("bulletin:".length) as "details" | "clouds"
+    : null;
+}
+
+function parseHelpAction(payload: string | undefined): "points" | "status" | "stop" | null {
+  return payload === "help:points" || payload === "help:status" || payload === "help:stop"
+    ? payload.slice("help:".length) as "points" | "status" | "stop"
     : null;
 }
 

@@ -233,6 +233,91 @@ describe("TelegramChannel /forecast", () => {
   });
 });
 
+describe("TelegramChannel /clouds", () => {
+  it("sends and removes a progress message around the cloud diagnostic", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getClouds: vi.fn(async () => [{
+        kind: "image" as const,
+        data: new Uint8Array([1, 2, 3]),
+        contentType: "image/png" as const,
+        filename: "clouds.png",
+        caption: "Облака",
+        source: "EUMETSAT",
+        observedAt: new Date(),
+      }]),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => null) } as never,
+      publications as never,
+      [],
+      { timeZone: "Europe/Moscow", satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 } } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: method === "deleteMessage" ? true : {
+          message_id: calls.length,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/clouds", 10));
+
+    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendPhoto", "deleteMessage"]);
+    expect(calls[0]?.body.text).toContain("Собираю информацию об облачности");
+    expect(publications.getClouds).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30, 64, 36, 68],
+    }), true);
+  });
+});
+
+describe("TelegramChannel /help", () => {
+  it("shows point, status, and unsubscribe actions as buttons", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const channel = new TelegramChannel(
+      "123:test",
+      {} as never,
+      {} as never,
+      [],
+      { scheduleTimes: ["05:00"], timeZone: "Europe/Moscow" } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: {
+          message_id: 1,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/help", 11));
+
+    expect(calls[0]?.body.reply_markup).toEqual(expect.objectContaining({
+      inline_keyboard: [
+        [
+          expect.objectContaining({ callback_data: "help:points" }),
+          expect.objectContaining({ callback_data: "help:status" }),
+        ],
+        [expect.objectContaining({ callback_data: "help:stop" })],
+      ],
+    }));
+  });
+});
+
 describe("TelegramChannel /map", () => {
   it("sends the current satellite image with map controls", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];

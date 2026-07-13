@@ -13,6 +13,9 @@ describe("formatHelpHtml", () => {
     expect(text).toContain("<code>/map</code>");
     expect(text).toContain("сама ничего не отправляет");
     expect(text).toContain("после <code>/start</code>");
+    expect(text).not.toContain("<code>/points</code>");
+    expect(text).not.toContain("<code>/status</code>");
+    expect(text).not.toContain("<code>/stop</code>");
   });
 
   it("marks the subscription as enabled only in the welcome variant", () => {

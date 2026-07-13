@@ -26,7 +26,5 @@ export function formatHelpHtml(scheduleTimes: string[], subscriptionEnabled = fa
     "<b>Анимации</b>",
     "Ролики показывают до 12 часов движения облачности и появляются после трёх успешных кадров.",
     "Для личной карты ролик приходит отдельно после <code>/weather</code> или <code>/clouds</code>; настройка <code>/map</code> сама ничего не отправляет.",
-    "",
-    "<code>/points</code> — контрольные точки · <code>/status</code> — время последнего обновления · <code>/stop</code> — отключить уведомления.",
   ].join("\n");
 }

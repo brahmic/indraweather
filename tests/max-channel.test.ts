@@ -297,6 +297,73 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
+  it("sends and removes a progress message around MAX /clouds", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-clouds",
+        attempts: 1,
+        payload: messageUpdate("/clouds"),
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = {
+      getClouds: vi.fn(async () => [mapImage()]),
+    };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-clouds"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Собираю информацию об облачности"));
+    expect(publications.getClouds).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30, 64, 36, 68],
+    }), true);
+    expect(api.deleteMessage).toHaveBeenCalledWith("message-1");
+    await channel.stop();
+  });
+
+  it("shows help actions as MAX buttons", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-help",
+        attempts: 1,
+        payload: messageUpdate("/help"),
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const channel = createChannel(database, api);
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-help"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.any(String), [
+      expect.objectContaining({
+        type: "inline_keyboard",
+        payload: {
+          buttons: [
+            [
+              expect.objectContaining({ payload: "help:points" }),
+              expect.objectContaining({ payload: "help:status" }),
+            ],
+            [expect.objectContaining({ payload: "help:stop" })],
+          ],
+        },
+      }),
+    ]);
+    await channel.stop();
+  });
+
   it("updates the same MAX map message through a callback", async () => {
     const database = databaseStub();
     database.claimMaxWebhook

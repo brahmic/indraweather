@@ -71,16 +71,21 @@ export class TelegramChannel implements DeliveryChannel {
         return;
       }
       await this.database.subscribe(this.id, String(ctx.chat.id));
-      await ctx.reply(formatHelpHtml(this.config.scheduleTimes, true), { parse_mode: "HTML" });
+      await ctx.reply(formatHelpHtml(this.config.scheduleTimes, true), {
+        parse_mode: "HTML",
+        reply_markup: this.helpKeyboard(),
+      });
     });
 
     this.bot.command("help", async (ctx) => {
-      await ctx.reply(formatHelpHtml(this.config.scheduleTimes), { parse_mode: "HTML" });
+      await ctx.reply(formatHelpHtml(this.config.scheduleTimes), {
+        parse_mode: "HTML",
+        reply_markup: this.helpKeyboard(),
+      });
     });
 
     this.bot.command("stop", async (ctx) => {
-      await this.database.unsubscribe(this.id, String(ctx.chat.id));
-      await ctx.reply("Автоматические уведомления отключены. Возобновить: /start");
+      await this.stopSubscription(ctx.chat.id);
     });
 
     this.bot.command("weather", async (ctx) => {
@@ -116,21 +121,11 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("points", async (ctx) => {
-      const lines = this.points.filter((point) => point.active).map((point) =>
-        `• ${escapeHtml(point.name)}: <code>${point.latitude.toFixed(3)}, ${point.longitude.toFixed(3)}</code>`);
-      await ctx.reply(`<b>Контрольные точки</b>\n${lines.join("\n")}`, { parse_mode: "HTML" });
+      await this.sendPoints(ctx.chat.id);
     });
 
     this.bot.command("status", async (ctx) => {
-      const updatedAt = await this.database.getLastSuccessfulUpdate();
-      const text = updatedAt
-        ? new Intl.DateTimeFormat("ru-RU", {
-          timeZone: this.config.timeZone,
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(updatedAt)
-        : "успешных обновлений ещё не было";
-      await ctx.reply(`Последнее успешное обновление: ${text}${updatedAt ? " МСК" : ""}.`);
+      await this.sendStatus(ctx.chat.id);
     });
 
     this.bot.command("clouds", async (ctx) => {
@@ -230,6 +225,18 @@ export class TelegramChannel implements DeliveryChannel {
       else await this.sendClouds(ctx.chat.id);
     });
 
+    this.bot.callbackQuery(/^help:(points|status|stop)$/u, async (ctx) => {
+      const action = ctx.match[1];
+      if (!ctx.chat) {
+        await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      if (action === "points") await this.sendPoints(ctx.chat.id);
+      else if (action === "status") await this.sendStatus(ctx.chat.id);
+      else await this.stopSubscription(ctx.chat.id);
+    });
+
     this.bot.catch((error) => {
       const cause = error.error;
       if (cause instanceof GrammyError) {
@@ -309,13 +316,45 @@ export class TelegramChannel implements DeliveryChannel {
   }
 
   private async sendClouds(chatId: number): Promise<void> {
-    const map = await this.getMapSelection(String(chatId));
-    const sent = await this.sendDiagnostic(
-      chatId,
-      async () => this.publications.getClouds(map.viewport, !map.isCustom),
-      "Диагностический снимок облаков временно недоступен.",
-    );
-    if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", String(chatId), map.viewport);
+    const progress = await this.bot.api.sendMessage(chatId, "⏳ Собираю информацию об облачности…");
+    try {
+      const map = await this.getMapSelection(String(chatId));
+      const sent = await this.sendDiagnostic(
+        chatId,
+        async () => this.publications.getClouds(map.viewport, !map.isCustom),
+        "Диагностический снимок облаков временно недоступен.",
+      );
+      if (sent && map.isCustom) this.enqueuePersonalAnimation("clouds", String(chatId), map.viewport);
+    } catch (error) {
+      this.logger.error({ error }, "Cloud diagnostic request failed");
+      await this.bot.api.sendMessage(chatId, "Диагностический снимок облаков временно недоступен.");
+    } finally {
+      await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
+        this.logger.debug({ error }, "Failed to remove clouds progress message"));
+    }
+  }
+
+  private async sendPoints(chatId: number): Promise<void> {
+    const lines = this.points.filter((point) => point.active).map((point) =>
+      `• ${escapeHtml(point.name)}: <code>${point.latitude.toFixed(3)}, ${point.longitude.toFixed(3)}</code>`);
+    await this.bot.api.sendMessage(chatId, `<b>Контрольные точки</b>\n${lines.join("\n")}`, { parse_mode: "HTML" });
+  }
+
+  private async sendStatus(chatId: number): Promise<void> {
+    const updatedAt = await this.database.getLastSuccessfulUpdate();
+    const text = updatedAt
+      ? new Intl.DateTimeFormat("ru-RU", {
+        timeZone: this.config.timeZone,
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(updatedAt)
+      : "успешных обновлений ещё не было";
+    await this.bot.api.sendMessage(chatId, `Последнее успешное обновление: ${text}${updatedAt ? " МСК" : ""}.`);
+  }
+
+  private async stopSubscription(chatId: number): Promise<void> {
+    await this.database.unsubscribe(this.id, String(chatId));
+    await this.bot.api.sendMessage(chatId, "Автоматические уведомления отключены. Возобновить: /start");
   }
 
   private async getMapViewport(recipientId: string): Promise<MapViewport> {
@@ -371,6 +410,14 @@ export class TelegramChannel implements DeliveryChannel {
     return new InlineKeyboard()
       .text("🔬 Детали", "bulletin:details")
       .text("☁️ Облака", "bulletin:clouds");
+  }
+
+  private helpKeyboard(): InlineKeyboard {
+    return new InlineKeyboard()
+      .text("📍 Точки", "help:points")
+      .text("🕒 Статус", "help:status")
+      .row()
+      .text("⏹ Отключить", "help:stop");
   }
 
   private mapCaption(caption: string, viewport: MapViewport): string {

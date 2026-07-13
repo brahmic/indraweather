@@ -231,19 +231,22 @@ function pointLayout(
   twoScenarios: boolean,
   options: ForecastMapOptions,
 ): { x: number; detailX: number; titleY: number } {
-  const titleWidth = Math.max(36, [...title].length * 8.5);
+  // Keep an intentionally generous estimate: Noto Sans Cyrillic glyphs vary widely in width.
+  const titleWidth = Math.max(42, [...title].length * 10.5);
   const detailWidth = twoScenarios ? 72 : 86;
+  const inlineGap = 14;
   const titleY = Math.max(
     70,
     Math.min(options.height - (twoScenarios ? 45 : 14), pointY < 70 ? pointY + 16 : pointY - 8),
   );
-  const fitsRight = pointX + 8 + titleWidth + (twoScenarios ? 0 : detailWidth) <= options.width - 8;
+  const inlineWidth = titleWidth + (twoScenarios ? 0 : inlineGap + detailWidth);
+  const fitsRight = pointX + 8 + inlineWidth <= options.width - 8;
   const x = fitsRight
     ? pointX + 8
-    : Math.max(8, pointX - titleWidth - (twoScenarios ? 10 : detailWidth + 10));
+    : Math.max(8, pointX - inlineWidth - 10);
   return {
     x,
-    detailX: x + titleWidth + 8,
+    detailX: x + titleWidth + inlineGap,
     titleY,
   };
 }

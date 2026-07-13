@@ -291,9 +291,57 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-bulletin-details"));
 
-    expect(api.answerCallback).toHaveBeenCalledWith("callback-details");
+    expect(api.answerCallback).toHaveBeenCalledWith("callback-details", {
+      text: "⏳ Готовлю детализацию по моделям…",
+      attachments: [],
+    });
     expect(publications.getFreshDetails).toHaveBeenCalledOnce();
     expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>details</b>"));
+    await channel.stop();
+  });
+
+  it("replaces a bulletin with the point picker from its five-day forecast action", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-bulletin-forecast",
+        attempts: 1,
+        payload: {
+          update_type: "message_callback",
+          timestamp: 1,
+          callback: {
+            timestamp: 1,
+            callback_id: "callback-bulletin-forecast",
+            payload: "bulletin:forecast",
+            user: { user_id: 42, is_bot: false },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      {} as never,
+      [{
+        id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true,
+      }],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-bulletin-forecast"));
+
+    expect(api.answerCallback).toHaveBeenCalledWith("callback-bulletin-forecast", {
+      text: "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.",
+      attachments: [expect.objectContaining({
+        type: "inline_keyboard",
+        payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
+      })],
+    });
     await channel.stop();
   });
 

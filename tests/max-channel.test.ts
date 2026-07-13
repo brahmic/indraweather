@@ -263,6 +263,7 @@ describe("MaxChannel", () => {
       .mockResolvedValueOnce(null);
     const api = apiStub();
     const publications = {
+      getForecastMap: vi.fn(async () => mapImage()),
       getPointForecast: vi.fn(async () => "Прогноз на 5 дней · Умба\nДень: Суббота, 11 июля"),
     };
     const channel = new MaxChannel(
@@ -281,12 +282,17 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-forecast-callback"));
 
-    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Выберите контрольную точку"), [
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Прогноз погоды"), [
+      expect.objectContaining({ type: "image" }),
       expect.objectContaining({
         type: "inline_keyboard",
         payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
       }),
     ]);
+    expect(publications.getForecastMap).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30, 64, 36, 68],
+    }));
+    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "map.png");
     expect(api.answerCallback).toHaveBeenCalledWith("callback-forecast", {
       text: "⏳ Готовлю прогноз для Умба…",
       attachments: [],
@@ -363,11 +369,12 @@ describe("MaxChannel", () => {
       } as never)
       .mockResolvedValueOnce(null);
     const api = apiStub();
+    const publications = { getForecastMap: vi.fn(async () => mapImage()) };
     const channel = new MaxChannel(
       "token",
       "https://weather.example.ru",
       database as never,
-      {} as never,
+      publications as never,
       [{
         id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true,
       }],
@@ -380,8 +387,8 @@ describe("MaxChannel", () => {
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-bulletin-forecast"));
 
     expect(api.answerCallback).toHaveBeenCalledWith("callback-bulletin-forecast", {
-      text: "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.",
-      attachments: [expect.objectContaining({
+      text: expect.stringContaining("<b>Прогноз погоды</b>"),
+      attachments: [expect.objectContaining({ type: "image" }), expect.objectContaining({
         type: "inline_keyboard",
         payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
       })],
@@ -515,11 +522,12 @@ describe("MaxChannel", () => {
       } as never)
       .mockResolvedValueOnce(null);
     const api = apiStub();
+    const publications = { getForecastMap: vi.fn(async () => mapImage()) };
     const channel = new MaxChannel(
       "token",
       "https://weather.example.ru",
       database as never,
-      {} as never,
+      publications as never,
       [{
         id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true,
       }],
@@ -532,8 +540,8 @@ describe("MaxChannel", () => {
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-welcome-forecast"));
 
     expect(api.answerCallback).toHaveBeenCalledWith("callback-welcome-forecast", {
-      text: "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.",
-      attachments: [expect.objectContaining({
+      text: expect.stringContaining("<b>Прогноз погоды</b>"),
+      attachments: [expect.objectContaining({ type: "image" }), expect.objectContaining({
         type: "inline_keyboard",
         payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
       })],

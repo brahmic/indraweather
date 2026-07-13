@@ -195,6 +195,33 @@ describe("PublicationService", () => {
     expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt, viewport);
   });
 
+  it("returns the current model map for the forecast picker without bulletin imagery", async () => {
+    const createdAt = new Date("2026-07-13T09:00:00Z");
+    const map = { kind: "image", filename: "forecast-map.png" } as never;
+    const forecastMap = { get: vi.fn(async () => map) };
+    const bulletins = {
+      getFreshOrRun: vi.fn(async () => ({
+        id: "bulletin-1", runId: "run-1", content: "weather", contentFormat: "plain",
+        summary: {}, createdAt,
+      })),
+    };
+    const service = new PublicationService(
+      bulletins as never,
+      null, null, null, null, null, null, forecastMap as never,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow", { warn: () => undefined } as never,
+    );
+    const viewport = {
+      bbox: [32, 65, 34, 67] as [number, number, number, number],
+      width: 900,
+      height: 700,
+    };
+
+    await expect(service.getForecastMap(viewport)).resolves.toBe(map);
+
+    expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt, viewport);
+  });
+
   it("rebuilds a stored bulletin for durable delivery retry", async () => {
     const createdAt = new Date("2026-07-13T09:00:00Z");
     const bulletins = {

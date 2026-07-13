@@ -403,9 +403,27 @@ export class MaxChannel implements DeliveryChannel {
   }
 
   private async sendPointForecastPicker(userId: number): Promise<void> {
-    await this.api.sendMessage(userId, "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", [
-      this.forecastKeyboard(),
-    ]);
+    await this.sendPointForecastPickerMessage(userId);
+  }
+
+  private async sendPointForecastPickerMessage(userId: number, callbackId?: string): Promise<void> {
+    try {
+      const image = await this.publications.getForecastMap(
+        (await this.getMapSelection(userId)).viewport,
+      );
+      const uploaded = await this.api.uploadImage(image.data, image.filename);
+      const message = {
+        text: forecastPickerText(image.caption),
+        attachments: [uploaded, this.forecastKeyboard()],
+      };
+      if (callbackId) await this.api.answerCallback(callbackId, message);
+      else await this.api.sendMessage(userId, message.text, message.attachments);
+    } catch (error) {
+      this.logger.warn({ err: error, userId }, "MAX forecast map request failed");
+      const message = { text: forecastPickerText(), attachments: [this.forecastKeyboard()] };
+      if (callbackId) await this.api.answerCallback(callbackId, message);
+      else await this.api.sendMessage(userId, message.text, message.attachments);
+    }
   }
 
   private async processPointForecastCallback(
@@ -445,10 +463,7 @@ export class MaxChannel implements DeliveryChannel {
       return;
     }
     if (action === "forecast") {
-      await this.api.answerCallback(callbackId, {
-        text: "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.",
-        attachments: [this.forecastKeyboard()],
-      });
+      await this.sendPointForecastPickerMessage(userId, callbackId);
       return;
     }
     const title = action === "details"
@@ -473,10 +488,7 @@ export class MaxChannel implements DeliveryChannel {
       return;
     }
     if (action === "forecast") {
-      await this.api.answerCallback(callbackId, {
-        text: "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.",
-        attachments: [this.forecastKeyboard()],
-      });
+      await this.sendPointForecastPickerMessage(userId, callbackId);
       return;
     }
     const title = action === "weather"
@@ -628,7 +640,7 @@ export class MaxChannel implements DeliveryChannel {
           { type: "callback", text: "🔬 Детали", payload: "bulletin:details" },
           { type: "callback", text: "☁️ Облачность", payload: "bulletin:clouds" },
         ], [
-          { type: "callback", text: "🗓️ Прогноз 5 дней", payload: "bulletin:forecast" },
+          { type: "callback", text: "🗺️ Прогноз погоды", payload: "bulletin:forecast" },
         ], [
           { type: "callback", text: "▶️ Движение облаков", payload: "bulletin:animation" },
         ]],
@@ -658,7 +670,7 @@ export class MaxChannel implements DeliveryChannel {
         buttons: [
           [
             { type: "callback", text: "🌊 Бюллетень", payload: "help:weather" },
-            { type: "callback", text: "🗓️ Прогноз 5 дней", payload: "help:forecast" },
+            { type: "callback", text: "🗺️ Прогноз погоды", payload: "help:forecast" },
           ],
           [
             { type: "callback", text: "📍 Точки", payload: "help:points" },
@@ -861,6 +873,11 @@ function parseMapAction(payload: string | undefined): MapViewportAction | null {
 function parsePointForecastId(payload: string | undefined): string | null {
   const match = /^forecast:([a-z0-9-]+)$/u.exec(payload ?? "");
   return match?.[1] ?? null;
+}
+
+function forecastPickerText(caption?: string): string {
+  const mapCaption = caption ? `${escapeHtml(caption)}\n\n` : "";
+  return `${mapCaption}<b>Прогноз погоды</b>\nВыберите контрольную точку, чтобы посмотреть прогноз на 5 дней.`;
 }
 
 function parseBulletinAction(payload: string | undefined): "details" | "clouds" | "forecast" | "animation" | null {

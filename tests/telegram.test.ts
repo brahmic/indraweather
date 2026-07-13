@@ -270,9 +270,10 @@ describe("TelegramChannel /update", () => {
 });
 
 describe("TelegramChannel /forecast", () => {
-  it("shows point buttons and replaces the selection with a five-day forecast", async () => {
+  it("shows the model map and point buttons together, then sends the five-day forecast", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
     const publications = {
+      getForecastMap: vi.fn(async () => bulletinImage("forecast.png")),
       getPointForecast: vi.fn(async () => [
         "Прогноз на 5 дней · Умба",
         "Обновлено: 11 июля, 12:00 МСК",
@@ -283,7 +284,7 @@ describe("TelegramChannel /forecast", () => {
     };
     const channel = new TelegramChannel(
       "123:test",
-      {} as never,
+      { getMapViewport: vi.fn(async () => null) } as never,
       publications as never,
       [{
         id: "umba", name: "Умба", shortName: "Умба", latitude: 66.679, longitude: 34.31, order: 60, active: true,
@@ -321,19 +322,25 @@ describe("TelegramChannel /forecast", () => {
           date: 1_783_700_000,
           chat: { id: 123, type: "private", first_name: "User" },
           text: "Прогноз на 5 дней",
+          photo: [],
         },
       },
     });
 
-    expect(calls[0]?.body.reply_markup).toEqual(expect.objectContaining({
+    expect(calls[1]?.body.reply_markup).toEqual(expect.objectContaining({
       inline_keyboard: [[expect.objectContaining({ callback_data: "forecast:umba" })]],
+    }));
+    expect(calls[1]?.body.caption).toContain("Прогноз погоды");
+    expect(calls[1]?.body.caption).toContain("прогноз на 5 дней");
+    expect(publications.getForecastMap).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30, 64, 36, 68],
     }));
     expect(publications.getPointForecast).toHaveBeenCalledWith("umba");
     expect(calls.map((call) => call.method)).toEqual([
-      "sendMessage",
+      "sendChatAction",
+      "sendPhoto",
       "answerCallbackQuery",
-      "editMessageText",
-      "editMessageText",
+      "sendMessage",
     ]);
     expect(calls.at(-1)?.body.text).toContain("<b>Прогноз на 5 дней · Умба</b>");
   });

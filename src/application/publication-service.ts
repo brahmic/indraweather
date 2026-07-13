@@ -1,5 +1,10 @@
 import type { BulletinService, RunBulletinOptions } from "./bulletin-service.js";
-import type { AnimationAttachment, DeliveryAttachment, Publication } from "../delivery/types.js";
+import type {
+  AnimationAttachment,
+  DeliveryAttachment,
+  ImageAttachment,
+  Publication,
+} from "../delivery/types.js";
 import type { SatelliteAnimationService } from "./satellite-animation-service.js";
 import type { CloudDiagnosticService } from "./cloud-diagnostic-service.js";
 import type { CloudAnimationService } from "./cloud-animation-service.js";
@@ -63,6 +68,12 @@ export class PublicationService {
 
   async getPointForecast(pointId: string): Promise<string> {
     return this.pointForecasts.get(pointId);
+  }
+
+  async getForecastMap(viewport?: MapViewport): Promise<ImageAttachment> {
+    if (!this.forecastMap) throw new Error("Forecast map is disabled");
+    const bulletin = await this.bulletins.getFreshOrRun();
+    return this.forecastMap.get(bulletin.runId, bulletin.createdAt, viewport);
   }
 
   async getSatelliteAnimation(): Promise<AnimationAttachment> {

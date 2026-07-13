@@ -43,7 +43,7 @@ export class TelegramChannel implements DeliveryChannel {
       { command: "weather", description: "Актуальный бюллетень" },
       { command: "details", description: "ECMWF и GFS отдельно" },
       { command: "animation", description: "Движение облаков" },
-      { command: "forecast", description: "Прогноз на 5 дней" },
+      { command: "forecast", description: "Прогноз погоды" },
       { command: "points", description: "Контрольные точки" },
       { command: "status", description: "Статус обновления" },
       { command: "clouds", description: "Облачность и ИК-снимок" },
@@ -190,16 +190,22 @@ export class TelegramChannel implements DeliveryChannel {
     this.bot.callbackQuery(/^forecast:([a-z0-9-]+)$/u, async (ctx) => {
       const pointId = ctx.match[1];
       const point = this.points.find((item) => item.id === pointId && item.active);
+      const chatId = ctx.chat?.id;
       if (!point) {
         await ctx.answerCallbackQuery({ text: "Точка больше не активна." });
         return;
       }
-      await ctx.answerCallbackQuery();
+      if (chatId === undefined) {
+        await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
+        return;
+      }
+      await ctx.answerCallbackQuery({ text: `⏳ Готовлю прогноз для ${point.shortName}…` });
       try {
-        await ctx.editMessageText(`⏳ Готовлю прогноз для ${point.shortName}…`, {
-          reply_markup: { inline_keyboard: [] },
-        });
         const content = await this.publications.getPointForecast(point.id);
+        if (ctx.callbackQuery.message && "photo" in ctx.callbackQuery.message) {
+          await this.sendContent(String(chatId), content);
+          return;
+        }
         await ctx.editMessageText(formatTelegramPost(content, this.points.map((item) => item.name)), {
           parse_mode: "HTML",
           link_preview_options: { is_disabled: true },
@@ -207,6 +213,10 @@ export class TelegramChannel implements DeliveryChannel {
         });
       } catch (error) {
         this.logger.error({ error, pointId }, "Point forecast request failed");
+        if (ctx.callbackQuery.message && "photo" in ctx.callbackQuery.message) {
+          await this.bot.api.sendMessage(chatId, "Не удалось подготовить пятидневный прогноз. Попробуйте ещё раз через минуту.");
+          return;
+        }
         await ctx.editMessageText("Не удалось подготовить пятидневный прогноз. Попробуйте ещё раз через минуту.", {
           reply_markup: { inline_keyboard: [] },
         }).catch(() => undefined);
@@ -371,10 +381,23 @@ export class TelegramChannel implements DeliveryChannel {
   }
 
   private async sendPointForecastPicker(chatId: number): Promise<void> {
-    await this.bot.api.sendMessage(chatId, "<b>Прогноз на 5 дней</b>\nВыберите контрольную точку.", {
-      parse_mode: "HTML",
-      reply_markup: this.forecastKeyboard(),
-    });
+    await this.bot.api.sendChatAction(chatId, "upload_photo");
+    try {
+      const image = await this.publications.getForecastMap(
+        await this.getMapViewport(String(chatId)),
+      );
+      await this.bot.api.sendPhoto(chatId, new InputFile(image.data, image.filename), {
+        caption: forecastPickerText(image.caption),
+        parse_mode: "HTML",
+        reply_markup: this.forecastKeyboard(),
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, chatId }, "Forecast map request failed");
+      await this.bot.api.sendMessage(chatId, forecastPickerText(), {
+        parse_mode: "HTML",
+        reply_markup: this.forecastKeyboard(),
+      });
+    }
   }
 
   private async sendCloudMotion(chatId: number): Promise<void> {
@@ -513,7 +536,7 @@ export class TelegramChannel implements DeliveryChannel {
       .text("🔬 Детали", "bulletin:details")
       .text("☁️ Облачность", "bulletin:clouds")
       .row()
-      .text("🗓️ Прогноз 5 дней", "bulletin:forecast")
+      .text("🗺️ Прогноз погоды", "bulletin:forecast")
       .row()
       .text("▶️ Движение облаков", "bulletin:animation");
   }
@@ -529,7 +552,7 @@ export class TelegramChannel implements DeliveryChannel {
   private startKeyboard(): InlineKeyboard {
     return new InlineKeyboard()
       .text("🌊 Бюллетень", "help:weather")
-      .text("🗓️ Прогноз 5 дней", "help:forecast")
+      .text("🗺️ Прогноз погоды", "help:forecast")
       .row()
       .text("📍 Точки", "help:points")
       .text("🕒 Статус", "help:status");
@@ -574,6 +597,11 @@ export class TelegramChannel implements DeliveryChannel {
     }
     return messages;
   }
+}
+
+function forecastPickerText(caption?: string): string {
+  const mapCaption = caption ? `${escapeHtml(caption)}\n\n` : "";
+  return `${mapCaption}<b>Прогноз погоды</b>\nВыберите контрольную точку, чтобы посмотреть прогноз на 5 дней.`;
 }
 
 export function formatTelegramPost(

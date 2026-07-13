@@ -59,7 +59,7 @@ export class MaxApiClient {
         { name: "weather", description: "Актуальный бюллетень" },
         { name: "details", description: "ECMWF и GFS отдельно" },
         { name: "animation", description: "Движение облаков" },
-        { name: "forecast", description: "Прогноз на 5 дней" },
+        { name: "forecast", description: "Прогноз погоды" },
         { name: "points", description: "Контрольные точки" },
         { name: "status", description: "Статус обновления" },
         { name: "clouds", description: "Облачность и ИК-снимок" },

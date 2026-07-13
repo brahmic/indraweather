@@ -11,7 +11,6 @@ import type { ForecastMapSnapshot, Database } from "../infrastructure/database.j
 import type { EumetviewClient } from "../infrastructure/eumetview.js";
 import type { Logger } from "../logger.js";
 import type { CoastlineOverlayService } from "./coastline-overlay-service.js";
-import type { WindOverlayService } from "./wind-overlay-service.js";
 
 export interface ForecastMapOptions {
   bbox: [number, number, number, number];
@@ -26,7 +25,6 @@ export class ForecastMapService {
     private readonly database: Database,
     private readonly coastlineClient: EumetviewClient,
     private readonly coastlineOverlay: CoastlineOverlayService,
-    private readonly windOverlay: WindOverlayService,
     private readonly options: ForecastMapOptions,
     private readonly logger: Logger,
   ) {}
@@ -39,13 +37,11 @@ export class ForecastMapService {
       : this.options;
     const coastlineClient = viewport ? this.coastlineClient.withViewport(viewport) : this.coastlineClient;
     const coastlineOverlay = viewport ? this.coastlineOverlay.withViewport(viewport) : this.coastlineOverlay;
-    const windOverlay = viewport ? this.windOverlay.withViewport(viewport) : this.windOverlay;
 
     try {
       const base = await this.createBase(options);
       const coastlined = await coastlineOverlay.apply(base, await coastlineClient.getCoastline());
-      const withWind = await windOverlay.applyForecast(coastlined, forecast, { headerTop: 64 });
-      const data = await this.addConditions(withWind, forecast, options);
+      const data = await this.addConditions(coastlined, forecast, options);
       return {
         kind: "image",
         data,
@@ -124,7 +120,7 @@ export class ForecastMapService {
       ? 74
       : 52;
     const x = Math.max(8, Math.min(options.width - width - 8, pointX > options.width * 0.72 ? pointX - width - 12 : pointX + 12));
-    const y = Math.max(122, Math.min(options.height - 50, pointY + 14));
+    const y = Math.max(72, Math.min(options.height - 50, pointY + 14));
 
     if (ecmwfCondition && gfsCondition
       && weatherConditionGroup(ecmwfCondition) === weatherConditionGroup(gfsCondition)) {

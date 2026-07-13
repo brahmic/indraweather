@@ -37,16 +37,10 @@ describe("ForecastMapService", () => {
       withViewport: vi.fn(),
     };
     coastlineOverlay.withViewport.mockReturnValue(coastlineOverlay);
-    const windOverlay = {
-      applyForecast: vi.fn(async (image: Uint8Array) => image),
-      withViewport: vi.fn(),
-    };
-    windOverlay.withViewport.mockReturnValue(windOverlay);
     const service = new ForecastMapService(
       database as never,
       coastlineClient as never,
       coastlineOverlay as never,
-      windOverlay as never,
       {
         bbox: [30, 64, 36, 68],
         width: 1000,
@@ -69,7 +63,6 @@ describe("ForecastMapService", () => {
 
     expect(database.getForecastMapSnapshot).toHaveBeenCalledWith("run-1", new Date("2026-07-13T08:40:00Z"));
     expect(coastlineOverlay.apply).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Array));
-    expect(windOverlay.applyForecast).toHaveBeenCalledWith(expect.any(Uint8Array), snapshot, { headerTop: 64 });
     expect(result.filename).toBe("forecast-map-2026-07-13T09-00-00Z.png");
     expect(result.caption).toContain("E/G: сценарии различаются");
     expect([...data.subarray(header, header + 3)]).not.toEqual([82, 127, 145]);
@@ -85,6 +78,5 @@ describe("ForecastMapService", () => {
     await service.get("run-1", new Date("2026-07-13T08:40:00Z"), viewport);
     expect(coastlineClient.withViewport).toHaveBeenCalledWith(viewport);
     expect(coastlineOverlay.withViewport).toHaveBeenCalledWith(viewport);
-    expect(windOverlay.withViewport).toHaveBeenCalledWith(viewport);
   });
 });

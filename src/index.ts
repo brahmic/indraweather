@@ -301,7 +301,6 @@ const forecastMap = new ForecastMapService(
     maxImageBytes: config.satellite.maxImageBytes,
   }),
   satelliteOverlay,
-  windOverlay,
   {
     bbox: config.satellite.bbox,
     width: config.satellite.width,

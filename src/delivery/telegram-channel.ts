@@ -133,11 +133,7 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("radar", async (ctx) => {
-      await this.sendDiagnostic(
-        ctx.chat.id,
-        async () => [await this.publications.getRadar(await this.getMapViewport(String(ctx.chat.id)))],
-        "Радар Sentinel-1 временно недоступен или ещё не настроен.",
-      );
+      await this.sendRadar(ctx.chat.id);
     });
 
     this.bot.command("lightning", async (ctx) => {
@@ -226,6 +222,19 @@ export class TelegramChannel implements DeliveryChannel {
           reply_markup: { inline_keyboard: [] },
         }).catch(() => undefined);
       }
+    });
+
+    this.bot.callbackQuery(/^forecast-action:(clouds|animation|lightning|radar)$/u, async (ctx) => {
+      if (!ctx.chat) {
+        await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
+        return;
+      }
+      await ctx.answerCallbackQuery();
+      const action = ctx.match[1];
+      if (action === "clouds") await this.sendClouds(ctx.chat.id);
+      else if (action === "animation") await this.sendCloudMotion(ctx.chat.id);
+      else if (action === "lightning") await this.sendLightning(ctx.chat.id);
+      else await this.sendRadar(ctx.chat.id);
     });
 
     this.bot.callbackQuery(/^bulletin:(details|clouds|forecast|animation)$/u, async (ctx) => {
@@ -392,17 +401,17 @@ export class TelegramChannel implements DeliveryChannel {
         await this.getMapViewport(String(chatId)),
       );
       await this.bot.api.sendPhoto(chatId, new InputFile(image.data, image.filename), {
-        caption: forecastPickerText(image.caption),
-        parse_mode: "HTML",
-        reply_markup: this.forecastKeyboard(),
+        caption: image.caption,
+        reply_markup: this.forecastDiagnosticKeyboard(),
       });
     } catch (error) {
       this.logger.warn({ err: error, chatId }, "Forecast map request failed");
-      await this.bot.api.sendMessage(chatId, forecastPickerText(), {
-        parse_mode: "HTML",
-        reply_markup: this.forecastKeyboard(),
-      });
+      await this.bot.api.sendMessage(chatId, "Модельную карту сейчас получить не удалось. Попробуйте ещё раз через минуту.");
     }
+    await this.bot.api.sendMessage(chatId, forecastPickerText(), {
+      parse_mode: "HTML",
+      reply_markup: this.forecastKeyboard(),
+    });
   }
 
   private async sendCloudMotion(chatId: number): Promise<void> {
@@ -466,6 +475,14 @@ export class TelegramChannel implements DeliveryChannel {
       await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) =>
         this.logger.debug({ error }, "Failed to remove lightning progress message"));
     }
+  }
+
+  private async sendRadar(chatId: number): Promise<void> {
+    await this.sendDiagnostic(
+      chatId,
+      async () => [await this.publications.getRadar(await this.getMapViewport(String(chatId)))],
+      "Радар Sentinel-1 временно недоступен или ещё не настроен.",
+    );
   }
 
   private async sendPoints(chatId: number): Promise<void> {
@@ -550,6 +567,15 @@ export class TelegramChannel implements DeliveryChannel {
     return keyboard;
   }
 
+  private forecastDiagnosticKeyboard(): InlineKeyboard {
+    return new InlineKeyboard()
+      .text("☁️ Облачность", "forecast-action:clouds")
+      .text("▶️ Движение облаков", "forecast-action:animation")
+      .row()
+      .text("⚡ Грозовая активность", "forecast-action:lightning")
+      .text("📡 Радар", "forecast-action:radar");
+  }
+
   private bulletinKeyboard(): InlineKeyboard {
     return new InlineKeyboard()
       .text("🔬 Детали", "bulletin:details")
@@ -618,9 +644,8 @@ export class TelegramChannel implements DeliveryChannel {
   }
 }
 
-function forecastPickerText(caption?: string): string {
-  const mapCaption = caption ? `${escapeHtml(caption)}\n\n` : "";
-  return `${mapCaption}<b>Прогноз погоды</b>\nВыберите контрольную точку, чтобы посмотреть прогноз на 5 дней.`;
+function forecastPickerText(): string {
+  return "<b>Прогноз погоды</b>\nВыберите контрольную точку, чтобы посмотреть прогноз на 5 дней.";
 }
 
 export function formatTelegramPost(

@@ -211,6 +211,12 @@ export class MaxChannel implements DeliveryChannel {
     if (update.update_type === "message_callback") {
       if (parseMapAction(update.callback.payload)) {
         await this.processMapCallback(update.callback.callback_id, update.callback.payload, update.callback.user.user_id);
+      } else if (parseForecastDiagnosticAction(update.callback.payload)) {
+        await this.processForecastDiagnosticCallback(
+          update.callback.callback_id,
+          update.callback.payload,
+          update.callback.user.user_id,
+        );
       } else if (parseBulletinAction(update.callback.payload)) {
         await this.processBulletinCallback(
           update.callback.callback_id,
@@ -276,11 +282,7 @@ export class MaxChannel implements DeliveryChannel {
         await this.sendClouds(sender.user_id);
         break;
       case "radar":
-        await this.sendDiagnostic(
-          sender.user_id,
-          async () => [await this.publications.getRadar()],
-          "Радар Sentinel-1 временно недоступен или ещё не настроен.",
-        );
+        await this.sendRadar(sender.user_id);
         break;
       case "lightning":
         await this.sendLightning(sender.user_id);
@@ -369,6 +371,15 @@ export class MaxChannel implements DeliveryChannel {
     }
   }
 
+  private async sendRadar(userId: number): Promise<void> {
+    const map = await this.getMapSelection(userId);
+    await this.sendDiagnostic(
+      userId,
+      async () => [await this.publications.getRadar(map.viewport)],
+      "Радар Sentinel-1 временно недоступен или ещё не настроен.",
+    );
+  }
+
   private async sendDetails(userId: number): Promise<void> {
     try {
       const details = await this.publications.getFreshDetails();
@@ -421,27 +432,20 @@ export class MaxChannel implements DeliveryChannel {
   }
 
   private async sendPointForecastPicker(userId: number): Promise<void> {
-    await this.sendPointForecastPickerMessage(userId);
-  }
-
-  private async sendPointForecastPickerMessage(userId: number, callbackId?: string): Promise<void> {
     try {
       const image = await this.publications.getForecastMap(
         (await this.getMapSelection(userId)).viewport,
       );
       const uploaded = await this.api.uploadImage(image.data, image.filename);
-      const message = {
-        text: forecastPickerText(image.caption),
-        attachments: [uploaded, this.forecastKeyboard()],
-      };
-      if (callbackId) await this.api.answerCallback(callbackId, message);
-      else await this.api.sendMessage(userId, message.text, message.attachments);
+      await this.api.sendMessage(userId, formatPostHtml(image.caption, [], true), [
+        uploaded,
+        this.forecastDiagnosticKeyboard(),
+      ]);
     } catch (error) {
       this.logger.warn({ err: error, userId }, "MAX forecast map request failed");
-      const message = { text: forecastPickerText(), attachments: [this.forecastKeyboard()] };
-      if (callbackId) await this.api.answerCallback(callbackId, message);
-      else await this.api.sendMessage(userId, message.text, message.attachments);
+      await this.api.sendMessage(userId, "Модельную карту сейчас получить не удалось. Попробуйте ещё раз через минуту.");
     }
+    await this.api.sendMessage(userId, forecastPickerText(), [this.forecastKeyboard()]);
   }
 
   private async processPointForecastCallback(
@@ -481,7 +485,8 @@ export class MaxChannel implements DeliveryChannel {
       return;
     }
     if (action === "forecast") {
-      await this.sendPointForecastPickerMessage(userId, callbackId);
+      await this.api.answerCallback(callbackId, undefined, "⏳ Готовлю модельную карту…");
+      await this.sendPointForecastPicker(userId);
       return;
     }
     const title = action === "details"
@@ -506,7 +511,8 @@ export class MaxChannel implements DeliveryChannel {
       return;
     }
     if (action === "forecast") {
-      await this.sendPointForecastPickerMessage(userId, callbackId);
+      await this.api.answerCallback(callbackId, undefined, "⏳ Готовлю модельную карту…");
+      await this.sendPointForecastPicker(userId);
       return;
     }
     const title = action === "weather"
@@ -521,6 +527,30 @@ export class MaxChannel implements DeliveryChannel {
     else if (action === "status") await this.sendStatus(userId);
     else if (action === "stop") await this.stopSubscription(userId);
     else await this.sendWeather(userId);
+  }
+
+  private async processForecastDiagnosticCallback(
+    callbackId: string,
+    payload: string | undefined,
+    userId: number,
+  ): Promise<void> {
+    const action = parseForecastDiagnosticAction(payload);
+    if (!action) {
+      await this.api.answerCallback(callbackId, undefined, "Кнопка больше не актуальна.");
+      return;
+    }
+    const title = action === "clouds"
+      ? "⏳ Собираю информацию об облачности…"
+      : action === "animation"
+      ? "⏳ Готовлю анимацию движения облаков…"
+      : action === "lightning"
+      ? "⏳ Получаю данные о вспышках…"
+      : "⏳ Запрашиваю радар Sentinel-1…";
+    await this.api.answerCallback(callbackId, undefined, title);
+    if (action === "clouds") await this.sendClouds(userId);
+    else if (action === "animation") await this.sendCloudMotion(userId);
+    else if (action === "lightning") await this.sendLightning(userId);
+    else await this.sendRadar(userId);
   }
 
   private async processMapCallback(
@@ -646,6 +676,21 @@ export class MaxChannel implements DeliveryChannel {
             payload: `forecast:${point.id}`,
           })),
         ),
+      },
+    };
+  }
+
+  private forecastDiagnosticKeyboard(): MaxMessageAttachment {
+    return {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [[
+          { type: "callback", text: "☁️ Облачность", payload: "forecast-action:clouds" },
+          { type: "callback", text: "▶️ Движение облаков", payload: "forecast-action:animation" },
+        ], [
+          { type: "callback", text: "⚡ Грозовая активность", payload: "forecast-action:lightning" },
+          { type: "callback", text: "📡 Радар", payload: "forecast-action:radar" },
+        ]],
       },
     };
   }
@@ -893,9 +938,25 @@ function parsePointForecastId(payload: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-function forecastPickerText(caption?: string): string {
-  const mapCaption = caption ? `${escapeHtml(caption)}\n\n` : "";
-  return `${mapCaption}<b>Прогноз погоды</b>\nВыберите контрольную точку, чтобы посмотреть прогноз на 5 дней.`;
+function forecastPickerText(): string {
+  return "<b>Прогноз погоды</b>\nВыберите контрольную точку, чтобы посмотреть прогноз на 5 дней.";
+}
+
+function parseForecastDiagnosticAction(
+  payload: string | undefined,
+): "clouds" | "animation" | "lightning" | "radar" | null {
+  switch (payload) {
+    case "forecast-action:clouds":
+      return "clouds";
+    case "forecast-action:animation":
+      return "animation";
+    case "forecast-action:lightning":
+      return "lightning";
+    case "forecast-action:radar":
+      return "radar";
+    default:
+      return null;
+  }
 }
 
 function parseBulletinAction(payload: string | undefined): "details" | "clouds" | "forecast" | "animation" | null {

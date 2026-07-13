@@ -282,8 +282,22 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-forecast-callback"));
 
-    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Прогноз погоды"), [
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Спутниковый снимок"), [
       expect.objectContaining({ type: "image" }),
+      expect.objectContaining({
+        type: "inline_keyboard",
+        payload: {
+          buttons: [[
+            expect.objectContaining({ payload: "forecast-action:clouds" }),
+            expect.objectContaining({ payload: "forecast-action:animation" }),
+          ], [
+            expect.objectContaining({ payload: "forecast-action:lightning" }),
+            expect.objectContaining({ payload: "forecast-action:radar" }),
+          ]],
+        },
+      }),
+    ]);
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>Прогноз погоды</b>"), [
       expect.objectContaining({
         type: "inline_keyboard",
         payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
@@ -299,6 +313,52 @@ describe("MaxChannel", () => {
     });
     expect(publications.getPointForecast).toHaveBeenCalledWith("umba");
     expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>Прогноз на 5 дней · Умба</b>"));
+    await channel.stop();
+  });
+
+  it("opens the radar from a forecast map action using the user's map coverage", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-forecast-radar",
+        attempts: 1,
+        payload: {
+          update_type: "message_callback",
+          timestamp: 1,
+          callback: {
+            timestamp: 1,
+            callback_id: "callback-forecast-radar",
+            payload: "forecast-action:radar",
+            user: { user_id: 42, is_bot: false },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const publications = { getRadar: vi.fn(async () => mapImage()) };
+    const channel = new MaxChannel(
+      "token",
+      "https://weather.example.ru",
+      database as never,
+      publications as never,
+      [],
+      appConfig() as never,
+      api,
+      { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-forecast-radar"));
+
+    expect(api.answerCallback).toHaveBeenCalledWith(
+      "callback-forecast-radar",
+      undefined,
+      "⏳ Запрашиваю радар Sentinel-1…",
+    );
+    expect(publications.getRadar).toHaveBeenCalledWith(expect.objectContaining({
+      bbox: [30, 64, 36, 68],
+    }));
+    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "map.png");
     await channel.stop();
   });
 
@@ -350,7 +410,7 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
-  it("replaces a bulletin with the point picker from its five-day forecast action", async () => {
+  it("sends the map and point picker after the bulletin five-day forecast action", async () => {
     const database = databaseStub();
     database.claimMaxWebhook
       .mockResolvedValueOnce({
@@ -386,13 +446,21 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-bulletin-forecast"));
 
-    expect(api.answerCallback).toHaveBeenCalledWith("callback-bulletin-forecast", {
-      text: expect.stringContaining("<b>Прогноз погоды</b>"),
-      attachments: [expect.objectContaining({ type: "image" }), expect.objectContaining({
+    expect(api.answerCallback).toHaveBeenCalledWith(
+      "callback-bulletin-forecast",
+      undefined,
+      "⏳ Готовлю модельную карту…",
+    );
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Спутниковый снимок"), [
+      expect.objectContaining({ type: "image" }),
+      expect.objectContaining({ type: "inline_keyboard" }),
+    ]);
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>Прогноз погоды</b>"), [
+      expect.objectContaining({
         type: "inline_keyboard",
         payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
-      })],
-    });
+      }),
+    ]);
     await channel.stop();
   });
 
@@ -538,7 +606,7 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
-  it("replaces MAX welcome message with the point picker from its forecast action", async () => {
+  it("sends the map and point picker after the welcome five-day forecast action", async () => {
     const database = databaseStub();
     database.claimMaxWebhook
       .mockResolvedValueOnce({
@@ -574,13 +642,21 @@ describe("MaxChannel", () => {
     await channel.start();
     await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-welcome-forecast"));
 
-    expect(api.answerCallback).toHaveBeenCalledWith("callback-welcome-forecast", {
-      text: expect.stringContaining("<b>Прогноз погоды</b>"),
-      attachments: [expect.objectContaining({ type: "image" }), expect.objectContaining({
+    expect(api.answerCallback).toHaveBeenCalledWith(
+      "callback-welcome-forecast",
+      undefined,
+      "⏳ Готовлю модельную карту…",
+    );
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("Спутниковый снимок"), [
+      expect.objectContaining({ type: "image" }),
+      expect.objectContaining({ type: "inline_keyboard" }),
+    ]);
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>Прогноз погоды</b>"), [
+      expect.objectContaining({
         type: "inline_keyboard",
         payload: { buttons: [[expect.objectContaining({ payload: "forecast:umba" })]] },
-      })],
-    });
+      }),
+    ]);
     await channel.stop();
   });
 

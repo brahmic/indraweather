@@ -277,7 +277,7 @@ export class MaxChannel implements DeliveryChannel {
 
   private async subscribeAndWelcome(userId: number): Promise<void> {
     await this.database.subscribe(this.id, String(userId));
-    await this.api.sendMessage(userId, formatHelpHtml(this.config.scheduleTimes, true), [this.helpKeyboard()]);
+    await this.api.sendMessage(userId, formatHelpHtml(this.config.scheduleTimes, true), [this.startKeyboard()]);
   }
 
   private async sendWeather(userId: number): Promise<void> {
@@ -403,7 +403,9 @@ export class MaxChannel implements DeliveryChannel {
     await this.api.answerCallback(callbackId);
     if (action === "points") await this.sendPoints(userId);
     else if (action === "status") await this.sendStatus(userId);
-    else await this.stopSubscription(userId);
+    else if (action === "stop") await this.stopSubscription(userId);
+    else if (action === "weather") await this.sendWeather(userId);
+    else await this.sendPointForecastPicker(userId);
   }
 
   private async processMapCallback(
@@ -547,6 +549,24 @@ export class MaxChannel implements DeliveryChannel {
             { type: "callback", text: "🕒 Статус", payload: "help:status" },
           ],
           [{ type: "callback", text: "⏹ Отключить", payload: "help:stop" }],
+        ],
+      },
+    };
+  }
+
+  private startKeyboard(): MaxMessageAttachment {
+    return {
+      type: "inline_keyboard",
+      payload: {
+        buttons: [
+          [
+            { type: "callback", text: "🌊 Бюллетень", payload: "help:weather" },
+            { type: "callback", text: "🗓️ Прогноз 5 дней", payload: "help:forecast" },
+          ],
+          [
+            { type: "callback", text: "📍 Точки", payload: "help:points" },
+            { type: "callback", text: "🕒 Статус", payload: "help:status" },
+          ],
         ],
       },
     };
@@ -734,9 +754,10 @@ function parseBulletinAction(payload: string | undefined): "details" | "clouds" 
     : null;
 }
 
-function parseHelpAction(payload: string | undefined): "points" | "status" | "stop" | null {
+function parseHelpAction(payload: string | undefined): "points" | "status" | "stop" | "weather" | "forecast" | null {
   return payload === "help:points" || payload === "help:status" || payload === "help:stop"
-    ? payload.slice("help:".length) as "points" | "status" | "stop"
+    || payload === "help:weather" || payload === "help:forecast"
+    ? payload.slice("help:".length) as "points" | "status" | "stop" | "weather" | "forecast"
     : null;
 }
 

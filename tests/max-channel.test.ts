@@ -364,6 +364,46 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
+  it("shows weather and five-day forecast actions after MAX bot start", async () => {
+    const database = databaseStub();
+    database.claimMaxWebhook
+      .mockResolvedValueOnce({
+        fingerprint: "event-start",
+        attempts: 1,
+        payload: {
+          update_type: "bot_started",
+          timestamp: 1,
+          chat_id: 42,
+          user: { user_id: 42, is_bot: false },
+        },
+      } as never)
+      .mockResolvedValueOnce(null);
+    const api = apiStub();
+    const channel = createChannel(database, api);
+
+    await channel.start();
+    await vi.waitFor(() => expect(database.completeMaxWebhook).toHaveBeenCalledWith("event-start"));
+
+    expect(api.sendMessage).toHaveBeenCalledWith(42, expect.any(String), [
+      expect.objectContaining({
+        type: "inline_keyboard",
+        payload: {
+          buttons: [
+            [
+              expect.objectContaining({ payload: "help:weather" }),
+              expect.objectContaining({ payload: "help:forecast" }),
+            ],
+            [
+              expect.objectContaining({ payload: "help:points" }),
+              expect.objectContaining({ payload: "help:status" }),
+            ],
+          ],
+        },
+      }),
+    ]);
+    await channel.stop();
+  });
+
   it("updates the same MAX map message through a callback", async () => {
     const database = databaseStub();
     database.claimMaxWebhook

@@ -318,6 +318,45 @@ describe("TelegramChannel /help", () => {
   });
 });
 
+describe("TelegramChannel /start", () => {
+  it("shows weather and five-day forecast actions without an unsubscribe button", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const database = { subscribe: vi.fn(async () => undefined) };
+    const channel = new TelegramChannel(
+      "123:test",
+      database as never,
+      {} as never,
+      [],
+      { scheduleTimes: ["05:00"], timeZone: "Europe/Moscow" } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      return {
+        ok: true,
+        result: {
+          message_id: 1,
+          date: 1_783_700_000,
+          chat: { id: 123, type: "private" },
+          text: "ok",
+        },
+      } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/start", 12));
+
+    expect(database.subscribe).toHaveBeenCalledWith("telegram", "123");
+    const keyboard = calls[0]?.body.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> };
+    expect(keyboard.inline_keyboard.flat().map((button) => button.callback_data)).toEqual([
+      "help:weather",
+      "help:forecast",
+      "help:points",
+      "help:status",
+    ]);
+  });
+});
+
 describe("TelegramChannel /map", () => {
   it("sends the current satellite image with map controls", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];

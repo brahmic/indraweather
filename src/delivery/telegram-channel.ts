@@ -73,7 +73,7 @@ export class TelegramChannel implements DeliveryChannel {
       await this.database.subscribe(this.id, String(ctx.chat.id));
       await ctx.reply(formatHelpHtml(this.config.scheduleTimes, true), {
         parse_mode: "HTML",
-        reply_markup: this.helpKeyboard(),
+        reply_markup: this.startKeyboard(),
       });
     });
 
@@ -89,24 +89,7 @@ export class TelegramChannel implements DeliveryChannel {
     });
 
     this.bot.command("weather", async (ctx) => {
-      const progress = await ctx.reply("⏳ Собираю прогноз и спутниковые снимки…");
-      try {
-        const map = await this.getMapSelection(String(ctx.chat.id));
-        const publication = await this.publications.getFreshOrRun(
-          map.viewport,
-          !map.isCustom,
-        );
-        await this.sendPublication(String(ctx.chat.id), publication);
-        await ctx.api.deleteMessage(ctx.chat.id, progress.message_id).catch((error: unknown) => {
-          this.logger.debug({ error }, "Failed to remove weather progress message");
-        });
-        if (map.isCustom) this.enqueuePersonalAnimation("satellite", String(ctx.chat.id), map.viewport);
-      } catch (error) {
-        this.logger.error({ error }, "Manual bulletin failed");
-        const failure = "Не удалось сформировать бюллетень: погодные данные временно недоступны.";
-        await ctx.api.editMessageText(ctx.chat.id, progress.message_id, failure)
-          .catch(async () => ctx.reply(failure));
-      }
+      await this.sendWeather(ctx.chat.id);
     });
 
     this.bot.command("details", async (ctx) => {
@@ -223,7 +206,7 @@ export class TelegramChannel implements DeliveryChannel {
       else await this.sendPointForecastPicker(ctx.chat.id);
     });
 
-    this.bot.callbackQuery(/^help:(points|status|stop)$/u, async (ctx) => {
+    this.bot.callbackQuery(/^help:(points|status|stop|weather|forecast)$/u, async (ctx) => {
       const action = ctx.match[1];
       if (!ctx.chat) {
         await ctx.answerCallbackQuery({ text: "Сообщение больше недоступно." });
@@ -232,7 +215,9 @@ export class TelegramChannel implements DeliveryChannel {
       await ctx.answerCallbackQuery();
       if (action === "points") await this.sendPoints(ctx.chat.id);
       else if (action === "status") await this.sendStatus(ctx.chat.id);
-      else await this.stopSubscription(ctx.chat.id);
+      else if (action === "stop") await this.stopSubscription(ctx.chat.id);
+      else if (action === "weather") await this.sendWeather(ctx.chat.id);
+      else await this.sendPointForecastPicker(ctx.chat.id);
     });
 
     this.bot.catch((error) => {
@@ -310,6 +295,24 @@ export class TelegramChannel implements DeliveryChannel {
     } catch (error) {
       this.logger.error({ error }, "Detailed model bulletin failed");
       await this.bot.api.sendMessage(chatId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");
+    }
+  }
+
+  private async sendWeather(chatId: number): Promise<void> {
+    const progress = await this.bot.api.sendMessage(chatId, "⏳ Собираю прогноз и спутниковые снимки…");
+    try {
+      const map = await this.getMapSelection(String(chatId));
+      const publication = await this.publications.getFreshOrRun(map.viewport, !map.isCustom);
+      await this.sendPublication(String(chatId), publication);
+      await this.bot.api.deleteMessage(chatId, progress.message_id).catch((error: unknown) => {
+        this.logger.debug({ error }, "Failed to remove weather progress message");
+      });
+      if (map.isCustom) this.enqueuePersonalAnimation("satellite", String(chatId), map.viewport);
+    } catch (error) {
+      this.logger.error({ error }, "Manual bulletin failed");
+      const failure = "Не удалось сформировать бюллетень: погодные данные временно недоступны.";
+      await this.bot.api.editMessageText(chatId, progress.message_id, failure)
+        .catch(() => this.bot.api.sendMessage(chatId, failure));
     }
   }
 
@@ -425,6 +428,15 @@ export class TelegramChannel implements DeliveryChannel {
       .text("🕒 Статус", "help:status")
       .row()
       .text("⏹ Отключить", "help:stop");
+  }
+
+  private startKeyboard(): InlineKeyboard {
+    return new InlineKeyboard()
+      .text("🌊 Бюллетень", "help:weather")
+      .text("🗓️ Прогноз 5 дней", "help:forecast")
+      .row()
+      .text("📍 Точки", "help:points")
+      .text("🕒 Статус", "help:status");
   }
 
   private mapCaption(caption: string, viewport: MapViewport): string {

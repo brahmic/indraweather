@@ -196,8 +196,8 @@ export class Database {
             run_id, point_id, model, forecast_at, received_at,
             wind_speed_ms, wind_gust_ms, wind_direction_deg,
             precipitation_mm, precipitation_probability_pct, visibility_km,
-            pressure_hpa, temperature_c
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            pressure_hpa, temperature_c, weather_code
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           ON CONFLICT (run_id, point_id, model, forecast_at) DO NOTHING
         `, [
           runId,
@@ -213,6 +213,7 @@ export class Database {
           value.visibilityKm,
           value.pressureHpa,
           value.temperatureC,
+          value.weatherCode,
         ]);
       }
       await client.query("COMMIT");
@@ -432,13 +433,14 @@ export class Database {
       wind_direction_deg: number | null;
       precipitation_mm: number | null;
       precipitation_probability_pct: number | null;
+      weather_code: number | null;
       visibility_km: number | null;
       pressure_hpa: number | null;
       temperature_c: number | null;
     }>(`
       SELECT point_id, model, forecast_at, received_at, wind_speed_ms, wind_gust_ms,
              wind_direction_deg, precipitation_mm, precipitation_probability_pct,
-             visibility_km, pressure_hpa, temperature_c
+             weather_code, visibility_km, pressure_hpa, temperature_c
       FROM forecast_values
       WHERE run_id = $1 AND point_id = $2
       ORDER BY forecast_at, model
@@ -453,6 +455,7 @@ export class Database {
       windDirectionDeg: row.wind_direction_deg,
       precipitationMm: row.precipitation_mm,
       precipitationProbabilityPct: row.precipitation_probability_pct,
+      weatherCode: row.weather_code,
       visibilityKm: row.visibility_km,
       pressureHpa: row.pressure_hpa,
       temperatureC: row.temperature_c,
@@ -467,6 +470,15 @@ export class Database {
         WHERE run_id = $1 AND point_id = $2 AND forecast_at >= $3
       ) AS available
     `, [runId, pointId, at]);
+    return result.rows[0]?.available ?? false;
+  }
+
+  async hasWeatherCodeCoverage(runId: string, pointId?: string): Promise<boolean> {
+    const result = await this.pool.query<{ available: boolean }>(`
+      SELECT COALESCE(bool_and(weather_code IS NOT NULL), false) AS available
+      FROM forecast_values
+      WHERE run_id = $1 ${pointId ? "AND point_id = $2" : ""}
+    `, pointId ? [runId, pointId] : [runId]);
     return result.rows[0]?.available ?? false;
   }
 

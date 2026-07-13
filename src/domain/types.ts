@@ -21,6 +21,7 @@ export interface ForecastValue {
   windDirectionDeg: number | null;
   precipitationMm: number | null;
   precipitationProbabilityPct: number | null;
+  weatherCode: number | null;
   visibilityKm: number | null;
   pressureHpa: number | null;
   temperatureC: number | null;

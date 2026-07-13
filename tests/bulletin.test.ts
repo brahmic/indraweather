@@ -70,6 +70,7 @@ describe("renderBulletin", () => {
       warningSourceUnavailable: false,
       marine: [],
       marineSourceUnavailable: false,
+      weather: { id: "rain", icon: "🌧️", label: "дождь", priority: 8 },
       timeZone: "Europe/Moscow",
     });
 
@@ -78,6 +79,7 @@ describe("renderBulletin", () => {
     expect(result).toContain("Ветер <сильный>");
     expect(result).toContain("Точка <1>");
     expect(result).toContain("Главное\nECMWF: усиление ветра");
+    expect(result).toContain("Погодная картина: 🌧️ дождь.");
     expect(result).toContain("Контрольные точки\nДиапазоны: границы ECMWF/GFS, не среднее");
     expect(result).toContain("Период 24–48 часов:");
     expect(result).toContain("Источники\nПогода: Open-Meteo");

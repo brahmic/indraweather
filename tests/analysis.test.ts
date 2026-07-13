@@ -73,6 +73,7 @@ function series(
     windDirectionDeg: direction,
     precipitationMm: index === 2 ? 0.5 : 0,
     precipitationProbabilityPct: null,
+    weatherCode: 2,
     visibilityKm: 20,
     pressureHpa: 1000 - index,
     temperatureC: 10,

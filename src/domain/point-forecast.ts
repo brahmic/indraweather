@@ -1,4 +1,5 @@
 import { windDirectionLabel } from "./bulletin.js";
+import { summarizeWeatherCodes } from "./weather-condition.js";
 import type {
   ControlPoint,
   ForecastValue,
@@ -30,7 +31,11 @@ export function renderPointForecast(input: PointForecastInput): string {
   for (const day of days) {
     const weather = input.weather.filter((value) => localDay(value.forecastAt, input.timeZone) === day);
     const marine = input.marine.filter((value) => localDay(value.forecastAt, input.timeZone) === day);
-    lines.push("", `День: ${formatDay(weather[0]?.forecastAt ?? input.generatedAt, input.timeZone)}`);
+    const condition = summarizeWeatherCodes(weather.map((value) => value.weatherCode));
+    lines.push(
+      "",
+      `День: ${formatDay(weather[0]?.forecastAt ?? input.generatedAt, input.timeZone)}${condition ? ` · ${condition.icon}` : ""}`,
+    );
     const ecmwf = summarizeModel(weather.filter((value) => value.model === "ecmwf"));
     const gfs = summarizeModel(weather.filter((value) => value.model === "gfs"));
     lines.push(`ECMWF: ${ecmwf.text}`);

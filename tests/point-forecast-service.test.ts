@@ -62,6 +62,7 @@ function value(model: "ecmwf" | "gfs", day: number, wind: number, hour = 9): For
     windDirectionDeg: 45,
     precipitationMm: 0,
     precipitationProbabilityPct: null,
+    weatherCode: 2,
     visibilityKm: 10,
     pressureHpa: 1000,
     temperatureC: 8,

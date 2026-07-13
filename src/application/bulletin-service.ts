@@ -17,6 +17,7 @@ import type { Logger } from "../logger.js";
 import { WEATHER_MODELS } from "../domain/types.js";
 import { POINT_FORECAST_HOURS } from "../domain/point-forecast.js";
 import { summarizeMarine } from "../infrastructure/open-meteo-marine.js";
+import { summarizeWeatherCodes } from "../domain/weather-condition.js";
 
 export interface RunBulletinOptions {
   kind: "scheduled" | "manual";
@@ -41,6 +42,7 @@ export class BulletinService {
     const freshnessMs = this.config.freshForecastMinutes * 60_000;
     if (latest?.contentFormat === "plain"
       && Date.now() - latest.createdAt.getTime() <= freshnessMs
+      && await this.database.hasWeatherCodeCoverage(latest.runId, pointId)
       && (!pointId || await this.database.hasForecastCoverage(
         latest.runId,
         pointId,
@@ -119,6 +121,10 @@ export class BulletinService {
         warningSourceUnavailable: warningResult.unavailable,
         marine: marineResult.values,
         marineSourceUnavailable: marineResult.unavailable,
+        weather: summarizeWeatherCodes(values
+          .filter((value) => value.forecastAt >= startedAt
+            && value.forecastAt <= new Date(startedAt.getTime() + 24 * 60 * 60 * 1000))
+          .map((value) => value.weatherCode)),
         timeZone: this.config.timeZone,
       });
       const dedupeKey = options.kind === "scheduled" && options.scheduledFor

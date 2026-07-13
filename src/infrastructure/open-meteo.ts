@@ -9,6 +9,7 @@ const responseSchema = z.object({
     temperature_2m: nullableNumbers,
     precipitation: nullableNumbers,
     precipitation_probability: nullableNumbers.optional(),
+    weather_code: nullableNumbers,
     visibility: nullableNumbers,
     pressure_msl: nullableNumbers,
     wind_speed_10m: nullableNumbers,
@@ -42,6 +43,7 @@ export class OpenMeteoClient {
     const variables = [
       "temperature_2m",
       "precipitation",
+      "weather_code",
       "visibility",
       "pressure_msl",
       "wind_speed_10m",
@@ -76,6 +78,7 @@ export class OpenMeteoClient {
         windDirectionDeg: at(hourly.wind_direction_10m, index),
         precipitationMm: at(hourly.precipitation, index),
         precipitationProbabilityPct: at(hourly.precipitation_probability, index),
+        weatherCode: at(hourly.weather_code, index),
         visibilityKm: divide(at(hourly.visibility, index), 1000),
         pressureHpa: at(hourly.pressure_msl, index),
         temperatureC: at(hourly.temperature_2m, index),

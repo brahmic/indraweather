@@ -32,6 +32,8 @@ describe("renderPointForecast", () => {
 
     expect(text).toContain("Прогноз на 5 дней · Умба");
     expect((text.match(/День:/gu) ?? [])).toHaveLength(5);
+    expect(text).toContain("День: Суббота, 11 июля · ⛅");
+    expect(text).toContain("День: Понедельник, 13 июля · 🌧️");
     expect(text).toContain("ECMWF: ветер 4–8 м/с");
     expect(text).toContain("GFS: ветер 5–10 м/с");
     expect(text).toContain("Расхождение: максимальный ветер 2 м/с.");
@@ -60,6 +62,7 @@ function forecast(model: "ecmwf" | "gfs", day: number, hour: number, wind: numbe
     windDirectionDeg: 45,
     precipitationMm: 1.2,
     precipitationProbabilityPct: model === "gfs" ? 60 : null,
+    weatherCode: day === 2 ? 61 : 2,
     visibilityKm: 8,
     pressureHpa: 1000,
     temperatureC: 8,

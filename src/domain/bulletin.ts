@@ -6,6 +6,7 @@ import type {
   TideExtreme,
   WeatherModel,
 } from "./types.js";
+import type { WeatherCondition } from "./weather-condition.js";
 import { circularDifference } from "./analysis.js";
 
 const AGREEMENT_LABELS: Record<string, string> = {
@@ -26,6 +27,7 @@ export interface BulletinInput {
   warningSourceUnavailable: boolean;
   marine: MarinePointSummary[];
   marineSourceUnavailable: boolean;
+  weather?: WeatherCondition | null;
   timeZone: string;
 }
 
@@ -58,6 +60,7 @@ export function renderBulletin(input: BulletinInput): string {
     "",
     "Главное",
     renderMainChange(input.summary, input.timeZone),
+    ...(input.weather ? [`Погодная картина: ${input.weather.icon} ${input.weather.label}.`] : []),
     `Верхняя граница моделей: ветер до ${round(input.summary.overallMaxWindMs)} м/с, ${formatGust(input.summary.overallMaxGustMs)}.`,
     `Согласованность: ${renderAgreement(input.summary)}`,
     "",

@@ -89,7 +89,9 @@ export function renderBulletin(input: BulletinInput): string {
       point.point.name,
       wind.text(point.minWindMs, point.maxWindMs, gust),
     );
-    if (dynamics) lines.push(`Динамика: ${dynamics}.`);
+    if (dynamics) {
+      lines.push(`Динамика: ${dynamics.summary}.`, ...dynamics.details.map((detail) => `${detail}.`));
+    }
     if (wind.turn) lines.push(`Поворот: ${wind.turn}.`);
     if (wind.directionUnavailable) lines.push("Направление: модели расходятся.");
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
@@ -209,31 +211,67 @@ function renderPointWindDynamics(
   point: BulletinSummary["pointSummaries"][number],
   summary: BulletinSummary,
   timeZone: string,
-): string | null {
+): { summary: string; details: string[] } | null {
   const ecmwf = point.models.ecmwf;
   const gfs = point.models.gfs;
-  if (!ecmwf || !gfs
-    || ecmwf.windChangeMs === 0 || gfs.windChangeMs === 0
-    || !ecmwf.windChangeStartedAt || !gfs.windChangeStartedAt
-    || !ecmwf.windChangeAt || !gfs.windChangeAt) {
-    return null;
-  }
-  if (Math.sign(ecmwf.windChangeMs) !== Math.sign(gfs.windChangeMs)) return null;
+  const ecmwfDynamics = renderModelWindDynamics(ecmwf, "ECMWF", timeZone);
+  const gfsDynamics = renderModelWindDynamics(gfs, "GFS", timeZone);
+  if (!ecmwfDynamics.hasChange && !gfsDynamics.hasChange) return null;
 
+  if (ecmwfDynamics.hasChange && gfsDynamics.hasChange && ecmwf && gfs
+    && ecmwf.windChangeStartedAt && gfs.windChangeStartedAt
+    && ecmwf.windChangeAt && gfs.windChangeAt
+    && Math.sign(ecmwf.windChangeMs) === Math.sign(gfs.windChangeMs)
+    && eventTimesAgree(ecmwf, gfs, summary.eventTimeAgreementHours)) {
+    const minimum = Math.min(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
+    const maximum = Math.max(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
+    const startedAt = new Date(Math.min(ecmwf.windChangeStartedAt.getTime(), gfs.windChangeStartedAt.getTime()));
+    const endedAt = new Date(Math.max(ecmwf.windChangeAt.getTime(), gfs.windChangeAt.getTime()));
+    const action = ecmwf.windChangeMs > 0 ? "усиление" : "ослабление";
+    return {
+      summary: `${action} на ${formatRange(minimum, maximum)} м/с ${formatTimeRange(startedAt, endedAt, timeZone)}`,
+      details: [],
+    };
+  }
+
+  return {
+    summary: ecmwf && gfs ? "модели расходятся" : "сравнение неполное",
+    details: [ecmwfDynamics.text, gfsDynamics.text],
+  };
+}
+
+function renderModelWindDynamics(
+  model: ModelSummary | undefined,
+  label: string,
+  timeZone: string,
+): { hasChange: boolean; text: string } {
+  if (!model) return { hasChange: false, text: `${label}: нет данных` };
+  if (model.windChangeMs === 0 || !model.windChangeAt) {
+    return { hasChange: false, text: `${label}: без заметного изменения` };
+  }
+  const action = model.windChangeMs > 0 ? "усиление" : "ослабление";
+  const timing = model.windChangeStartedAt
+    ? formatTimeRange(model.windChangeStartedAt, model.windChangeAt, timeZone)
+    : `около ${formatTime(model.windChangeAt, timeZone)}`;
+  return {
+    hasChange: true,
+    text: `${label}: ${action} на ${formatNumber(Math.abs(model.windChangeMs))} м/с ${timing}`,
+  };
+}
+
+function eventTimesAgree(
+  ecmwf: ModelSummary,
+  gfs: ModelSummary,
+  thresholdHours: number,
+): boolean {
+  if (!ecmwf.windChangeStartedAt || !gfs.windChangeStartedAt
+    || !ecmwf.windChangeAt || !gfs.windChangeAt) return false;
   const endDifferenceHours = Math.abs(ecmwf.windChangeAt.getTime() - gfs.windChangeAt.getTime())
     / 3_600_000;
   const startDifferenceHours = Math.abs(
     ecmwf.windChangeStartedAt.getTime() - gfs.windChangeStartedAt.getTime(),
   ) / 3_600_000;
-  if (endDifferenceHours > summary.eventTimeAgreementHours
-    || startDifferenceHours > summary.eventTimeAgreementHours) return null;
-
-  const minimum = Math.min(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
-  const maximum = Math.max(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
-  const startedAt = new Date(Math.min(ecmwf.windChangeStartedAt.getTime(), gfs.windChangeStartedAt.getTime()));
-  const endedAt = new Date(Math.max(ecmwf.windChangeAt.getTime(), gfs.windChangeAt.getTime()));
-  const action = ecmwf.windChangeMs > 0 ? "усиление" : "ослабление";
-  return `${action} на ${formatRange(minimum, maximum)} м/с ${formatTimeRange(startedAt, endedAt, timeZone)}`;
+  return endDifferenceHours <= thresholdHours && startDifferenceHours <= thresholdHours;
 }
 
 function renderOutlook(summary: BulletinSummary): string {

@@ -71,6 +71,7 @@ export function renderBulletin(input: BulletinInput): string {
 
   for (const point of input.summary.pointSummaries) {
     const gust = point.maxGustMs === null ? "нет данных" : `до ${round(point.maxGustMs)} м/с`;
+    const wind = renderPointWind(point, input.summary);
     const extras: string[] = [];
     if (point.precipitationMm >= 0.1) extras.push(`осадки ${formatNumber(point.precipitationMm)} мм`);
     if (point.minVisibilityKm !== null && point.minVisibilityKm < 10) {
@@ -85,8 +86,10 @@ export function renderBulletin(input: BulletinInput): string {
     lines.push(
       "",
       point.point.name,
-      `Ветер ${round(point.minWindMs)}–${round(point.maxWindMs)} м/с · порывы ${gust}.`,
+      wind.text(point.minWindMs, point.maxWindMs, gust),
     );
+    if (wind.turn) lines.push(`Поворот: ${wind.turn}.`);
+    if (wind.directionUnavailable) lines.push("Направление: модели расходятся.");
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
     const marine = marineByPointId.get(point.point.id);
     lines.push(marine ? `Море: ${renderMarine(marine)}.` : "Море: нет данных.");
@@ -95,7 +98,6 @@ export function renderBulletin(input: BulletinInput): string {
   lines.push(
     "",
     "Обстановка",
-    `Поворот ветра: ${renderDirectionTurn(input.summary)}.`,
     `Давление: ${renderPressure(input.summary)}.`,
     `Период 24–48 часов: ${renderOutlook(input.summary)}.`,
     `Прилив: ${renderTide(input.tides, generatedAt, input.timeZone)}`,
@@ -152,23 +154,53 @@ function formatMetres(value: number | null): string {
   return value === null ? "нет данных" : `${formatNumber(value)} м`;
 }
 
-function renderDirectionTurn(summary: BulletinSummary): string {
-  const turns = summary.pointSummaries.flatMap((point) =>
-    Object.values(point.models).flatMap((model) => {
-      if (!model || model.directionStartDeg === null || model.directionEndDeg === null) return [];
-      return [{
-        point: point.point.name,
-        model: model.model,
-        start: model.directionStartDeg,
-        end: model.directionEndDeg,
-        angle: circularDifference(model.directionStartDeg, model.directionEndDeg),
-      }];
-    }),
-  ).filter((turn) => turn.angle >= summary.directionChangeThresholdDeg)
-    .sort((left, right) => right.angle - left.angle);
-  const turn = turns[0];
-  if (!turn) return "заметный поворот не выделяется";
-  return `${turn.point}, ${modelLabel(turn.model)}: ${windDirectionLabel(turn.start)} → ${windDirectionLabel(turn.end)}`;
+function renderPointWind(
+  point: BulletinSummary["pointSummaries"][number],
+  summary: BulletinSummary,
+): {
+  text: (minimum: number, maximum: number, gust: string) => string;
+  turn: string | null;
+  directionUnavailable: boolean;
+} {
+  const ecmwf = point.models.ecmwf;
+  const gfs = point.models.gfs;
+  if (!ecmwf || !gfs
+    || ecmwf.directionStartDeg === null || gfs.directionStartDeg === null
+    || ecmwf.directionEndDeg === null || gfs.directionEndDeg === null) {
+    return {
+      text: (minimum, maximum, gust) => `Ветер: ${round(minimum)}–${round(maximum)} м/с · порывы ${gust}.`,
+      turn: null,
+      directionUnavailable: false,
+    };
+  }
+
+  const startsAgree = circularDifference(ecmwf.directionStartDeg, gfs.directionStartDeg)
+    <= summary.directionAgreementThresholdDeg;
+  const endsAgree = circularDifference(ecmwf.directionEndDeg, gfs.directionEndDeg)
+    <= summary.directionAgreementThresholdDeg;
+  if (!startsAgree || !endsAgree) {
+    return {
+      text: (minimum, maximum, gust) => `Ветер: ${round(minimum)}–${round(maximum)} м/с · порывы ${gust}.`,
+      turn: null,
+      directionUnavailable: true,
+    };
+  }
+
+  const start = averageDirection(ecmwf.directionStartDeg, gfs.directionStartDeg);
+  const end = averageDirection(ecmwf.directionEndDeg, gfs.directionEndDeg);
+  const direction = windDirectionLabel(start);
+  const hasTurn = circularDifference(start, end) >= summary.directionChangeThresholdDeg;
+  return {
+    text: (minimum, maximum, gust) => `Ветер: ${direction} ${round(minimum)}–${round(maximum)} м/с · порывы ${gust}.`,
+    turn: hasTurn ? `${direction} → ${windDirectionLabel(end)}` : null,
+    directionUnavailable: false,
+  };
+}
+
+function averageDirection(left: number, right: number): number {
+  const x = Math.cos(left * Math.PI / 180) + Math.cos(right * Math.PI / 180);
+  const y = Math.sin(left * Math.PI / 180) + Math.sin(right * Math.PI / 180);
+  return Math.atan2(y, x) * 180 / Math.PI;
 }
 
 function renderOutlook(summary: BulletinSummary): string {

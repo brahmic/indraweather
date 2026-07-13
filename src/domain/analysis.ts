@@ -70,6 +70,7 @@ export function analyzeForecast(
     generatedAt: generatedAt.toISOString(),
     horizonHours: 24,
     directionChangeThresholdDeg: thresholds.directionChangeDeg,
+    directionAgreementThresholdDeg: thresholds.directionAgreementDeg,
     pointSummaries,
     agreement: analyzeAgreement(pointSummaries, thresholds),
     overallMaxWindMs: max(pointSummaries.map((item) => item.maxWindMs)) ?? 0,

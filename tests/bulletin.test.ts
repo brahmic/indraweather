@@ -6,6 +6,7 @@ const summary: BulletinSummary = {
   generatedAt: "2026-07-11T05:00:00.000Z",
   horizonHours: 24,
   directionChangeThresholdDeg: 45,
+  directionAgreementThresholdDeg: 45,
   pointSummaries: [{
     point: {
       id: "one",
@@ -95,6 +96,8 @@ describe("renderBulletin", () => {
     expect(result).toContain("Главное\nECMWF: усиление ветра");
     expect(result).toContain("Погодная картина: 🌧️ дождь.");
     expect(result).toContain("Контрольные точки\nДиапазоны: границы ECMWF/GFS, не среднее");
+    expect(result).toContain("Ветер: 3–7 м/с · порывы до 10 м/с.");
+    expect(result).not.toContain("Поворот ветра:");
     expect(result).toContain("Период 24–48 часов:");
     expect(result).toContain("Источники\nПогода: Open-Meteo");
     expect(result).not.toContain("<b>");
@@ -149,9 +152,81 @@ describe("renderBulletin", () => {
       timeZone: "Europe/Moscow",
     });
 
-    expect(result).toContain("Точка <1>\nВетер 3–7 м/с · порывы до 10 м/с.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.");
+    expect(result).toContain("Точка <1>\nВетер: 3–7 м/с · порывы до 10 м/с.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.");
     expect(result).not.toContain("\nВолна и вода\n");
     expect(result).toContain("Выпуск\nИзменение: нет предыдущего планового выпуска для сравнения.\nПрогноз морской модели: в губах, за островами и у берега условия могут отличаться.");
+  });
+
+  it("adds agreed wind direction and significant turn to a control point", () => {
+    const compared: BulletinSummary = {
+      ...summary,
+      pointSummaries: summary.pointSummaries.map((point) => ({
+        ...point,
+        models: {
+          ecmwf: point.models.ecmwf!,
+          gfs: {
+            ...point.models.ecmwf!,
+            model: "gfs",
+            directionStartDeg: 250,
+            directionEndDeg: 320,
+          },
+        },
+      })),
+      agreement: {
+        agreed: true,
+        windDifferenceMs: 0,
+        gustDifferenceMs: 0,
+        directionDifferenceDeg: 5,
+        eventTimeDifferenceHours: 0,
+        reasons: [],
+      },
+    };
+    const result = renderBulletin({
+      summary: compared,
+      warnings: [],
+      tides: [],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain("Ветер: З 3–7 м/с · порывы до 10 м/с.\nПоворот: З → СЗ.");
+  });
+
+  it("does not show a combined direction when models disagree at a point", () => {
+    const compared: BulletinSummary = {
+      ...summary,
+      pointSummaries: summary.pointSummaries.map((point) => ({
+        ...point,
+        models: {
+          ecmwf: point.models.ecmwf!,
+          gfs: {
+            ...point.models.ecmwf!,
+            model: "gfs",
+            directionStartDeg: 90,
+            directionEndDeg: 135,
+          },
+        },
+      })),
+    };
+    const result = renderBulletin({
+      summary: compared,
+      warnings: [],
+      tides: [],
+      previousSummary: null,
+      nextScheduledAt: null,
+      unavailableModels: [],
+      warningSourceUnavailable: false,
+      marine: [],
+      marineSourceUnavailable: false,
+      timeZone: "Europe/Moscow",
+    });
+
+    expect(result).toContain("Направление: модели расходятся.");
   });
 });
 

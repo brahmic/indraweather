@@ -109,6 +109,7 @@ export interface BulletinSummary {
   generatedAt: string;
   horizonHours: number;
   directionChangeThresholdDeg: number;
+  directionAgreementThresholdDeg: number;
   pointSummaries: PointSummary[];
   agreement: ModelAgreement;
   overallMaxWindMs: number;

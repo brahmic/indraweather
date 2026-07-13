@@ -34,6 +34,7 @@ function summary(pointSummaries: PointSummary[]): BulletinSummary {
     generatedAt: "2026-07-11T11:00:00.000Z",
     horizonHours: 24,
     directionChangeThresholdDeg: 45,
+    directionAgreementThresholdDeg: 45,
     pointSummaries,
     agreement: {
       agreed: false,

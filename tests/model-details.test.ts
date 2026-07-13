@@ -12,6 +12,7 @@ describe("renderModelDetails", () => {
     expect(text).toContain("GFS: ветер 5–9 м/с");
     expect(text).toContain("Расхождение: максимальный ветер 3 м/с, порывы 4 м/с");
     expect(text).toContain("усиление на 3 м/с с 12:00 до 15:00 МСК");
+    expect(text).toContain("поворот ЮЗ → З с 12:00 до 15:00 МСК");
   });
 
   it("fits five configured points into one Telegram message", () => {
@@ -89,6 +90,10 @@ function model(
     maxGustMs,
     directionStartDeg,
     directionEndDeg,
+    directionChangeStartDeg: directionStartDeg,
+    directionChangeEndDeg: directionEndDeg,
+    directionChangeStartedAt: new Date("2026-07-11T09:00:00Z"),
+    directionChangeAt: new Date("2026-07-11T12:00:00Z"),
     windChangeMs: 3,
     windChangeStartedAt: new Date("2026-07-11T09:00:00Z"),
     windChangeAt: new Date("2026-07-11T12:00:00Z"),

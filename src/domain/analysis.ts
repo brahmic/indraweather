@@ -42,7 +42,7 @@ export function analyzeForecast(
       const series = current
         .filter((value) => value.pointId === point.id && value.model === model)
         .sort((left, right) => left.forecastAt.getTime() - right.forecastAt.getTime());
-      const summary = summarizeModel(model, series, thresholds.windChangeMs);
+      const summary = summarizeModel(model, series, thresholds);
       if (summary) models[model] = summary;
     }
     const summaries = Object.values(models);
@@ -86,7 +86,7 @@ export function analyzeForecast(
 function summarizeModel(
   model: WeatherModel,
   series: ForecastValue[],
-  windChangeThresholdMs: number,
+  thresholds: AnalysisThresholds,
 ): ModelSummary | null {
   const wind = series.filter(hasWind);
   if (wind.length === 0) return null;
@@ -105,7 +105,7 @@ function summarizeModel(
       windChangeAt = current.forecastAt;
     }
   }
-  if (Math.abs(strongestChange) < windChangeThresholdMs) {
+  if (Math.abs(strongestChange) < thresholds.windChangeMs) {
     strongestChange = 0;
     windChangeStartedAt = null;
     windChangeAt = null;
@@ -113,6 +113,7 @@ function summarizeModel(
 
   const firstDirection = series.find((item) => item.windDirectionDeg !== null)?.windDirectionDeg ?? null;
   const lastDirection = series.findLast((item) => item.windDirectionDeg !== null)?.windDirectionDeg ?? null;
+  const directionChange = summarizeDirectionChange(series, thresholds.directionChangeDeg);
   const firstPressure = series.find((item) => item.pressureHpa !== null)?.pressureHpa ?? null;
   const lastPressure = series.findLast((item) => item.pressureHpa !== null)?.pressureHpa ?? null;
 
@@ -123,6 +124,10 @@ function summarizeModel(
     maxGustMs: max(series.map((item) => item.windGustMs)),
     directionStartDeg: firstDirection,
     directionEndDeg: lastDirection,
+    directionChangeStartDeg: directionChange.startDeg,
+    directionChangeEndDeg: directionChange.endDeg,
+    directionChangeStartedAt: directionChange.startedAt,
+    directionChangeAt: directionChange.at,
     windChangeMs: strongestChange,
     windChangeStartedAt,
     windChangeAt,
@@ -134,6 +139,43 @@ function summarizeModel(
     minTemperatureC: min(series.map((item) => item.temperatureC)),
     maxTemperatureC: max(series.map((item) => item.temperatureC)),
   };
+}
+
+function summarizeDirectionChange(
+  series: ForecastValue[],
+  thresholdDeg: number,
+): {
+  startDeg: number | null;
+  endDeg: number | null;
+  startedAt: Date | null;
+  at: Date | null;
+} {
+  const directions = series.filter((value) => value.windDirectionDeg !== null);
+  let strongestDifference = 0;
+  let startDeg: number | null = null;
+  let endDeg: number | null = null;
+  let startedAt: Date | null = null;
+  let at: Date | null = null;
+  for (let index = 3; index < directions.length; index += 1) {
+    const previous = directions[index - 3];
+    const current = directions[index];
+    if (!previous || !current || previous.windDirectionDeg === null || current.windDirectionDeg === null) continue;
+    const next = directions[index + 1];
+    if (next && next.windDirectionDeg !== null
+      && circularDifference(current.windDirectionDeg, next.windDirectionDeg) >= thresholdDeg) continue;
+    const difference = circularDifference(previous.windDirectionDeg, current.windDirectionDeg);
+    if (difference > strongestDifference) {
+      strongestDifference = difference;
+      startDeg = previous.windDirectionDeg;
+      endDeg = current.windDirectionDeg;
+      startedAt = previous.forecastAt;
+      at = current.forecastAt;
+    }
+  }
+  if (strongestDifference < thresholdDeg) {
+    return { startDeg: null, endDeg: null, startedAt: null, at: null };
+  }
+  return { startDeg, endDeg, startedAt, at };
 }
 
 function analyzeAgreement(

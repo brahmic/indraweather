@@ -60,6 +60,46 @@ describe("analyzeForecast", () => {
     expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeStartedAt).toBeNull();
     expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeAt).toBeNull();
   });
+
+  it("records the interval of a significant directional turn", () => {
+    const now = new Date("2026-07-11T00:00:00Z");
+    const values = series("ecmwf", now, [4, 4, 4, 4, 4], 270).map((value, index) => ({
+      ...value,
+      windDirectionDeg: index < 3 ? 270 : 315,
+    }));
+    const summary = analyzeForecast([point], values, now, {
+      windChangeMs: 2,
+      windAgreementMs: 2,
+      gustAgreementMs: 3,
+      directionChangeDeg: 45,
+      directionAgreementDeg: 45,
+      eventTimeAgreementHours: 2,
+    });
+    const model = summary.pointSummaries[0]?.models.ecmwf;
+
+    expect(model?.directionChangeStartDeg).toBe(270);
+    expect(model?.directionChangeEndDeg).toBe(315);
+    expect(model?.directionChangeStartedAt).toEqual(new Date("2026-07-11T00:00:00Z"));
+    expect(model?.directionChangeAt).toEqual(new Date("2026-07-11T03:00:00Z"));
+  });
+
+  it("ignores a directional jump that immediately reverses", () => {
+    const now = new Date("2026-07-11T00:00:00Z");
+    const values = series("ecmwf", now, [4, 4, 4, 4, 4], 270).map((value, index) => ({
+      ...value,
+      windDirectionDeg: index === 3 ? 315 : 270,
+    }));
+    const summary = analyzeForecast([point], values, now, {
+      windChangeMs: 2,
+      windAgreementMs: 2,
+      gustAgreementMs: 3,
+      directionChangeDeg: 45,
+      directionAgreementDeg: 45,
+      eventTimeAgreementHours: 2,
+    });
+
+    expect(summary.pointSummaries[0]?.models.ecmwf?.directionChangeAt).toBeNull();
+  });
 });
 
 function series(

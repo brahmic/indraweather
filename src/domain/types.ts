@@ -77,6 +77,10 @@ export interface ModelSummary {
   maxGustMs: number | null;
   directionStartDeg: number | null;
   directionEndDeg: number | null;
+  directionChangeStartDeg: number | null;
+  directionChangeEndDeg: number | null;
+  directionChangeStartedAt: Date | null;
+  directionChangeAt: Date | null;
   windChangeMs: number;
   windChangeStartedAt: Date | null;
   windChangeAt: Date | null;

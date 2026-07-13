@@ -73,6 +73,7 @@ export function renderBulletin(input: BulletinInput): string {
     const gust = point.maxGustMs === null ? "нет данных" : `до ${round(point.maxGustMs)} м/с`;
     const wind = renderPointWind(point, input.summary);
     const dynamics = renderPointWindDynamics(point, input.summary, input.timeZone);
+    const turn = renderPointWindTurn(point, input.summary, input.timeZone);
     const extras: string[] = [];
     if (point.precipitationMm >= 0.1) extras.push(`осадки ${formatNumber(point.precipitationMm)} мм`);
     if (point.minVisibilityKm !== null && point.minVisibilityKm < 10) {
@@ -92,7 +93,7 @@ export function renderBulletin(input: BulletinInput): string {
     if (dynamics) {
       lines.push(`Динамика: ${dynamics.summary}.`, ...dynamics.details.map((detail) => `${detail}.`));
     }
-    if (wind.turn) lines.push(`Поворот: ${wind.turn}.`);
+    if (turn) lines.push(`Поворот: ${turn.summary}.`, ...turn.details.map((detail) => `${detail}.`));
     if (wind.directionUnavailable) lines.push("Направление: модели расходятся.");
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
     const marine = marineByPointId.get(point.point.id);
@@ -163,7 +164,6 @@ function renderPointWind(
   summary: BulletinSummary,
 ): {
   text: (minimum: number, maximum: number, gust: string) => string;
-  turn: string | null;
   directionUnavailable: boolean;
 } {
   const ecmwf = point.models.ecmwf;
@@ -173,7 +173,6 @@ function renderPointWind(
     || ecmwf.directionEndDeg === null || gfs.directionEndDeg === null) {
     return {
       text: (minimum, maximum, gust) => `Ветер: ${round(minimum)}–${round(maximum)} м/с · порывы ${gust}.`,
-      turn: null,
       directionUnavailable: false,
     };
   }
@@ -185,18 +184,14 @@ function renderPointWind(
   if (!startsAgree || !endsAgree) {
     return {
       text: (minimum, maximum, gust) => `Ветер: ${round(minimum)}–${round(maximum)} м/с · порывы ${gust}.`,
-      turn: null,
       directionUnavailable: true,
     };
   }
 
   const start = averageDirection(ecmwf.directionStartDeg, gfs.directionStartDeg);
-  const end = averageDirection(ecmwf.directionEndDeg, gfs.directionEndDeg);
   const direction = windDirectionLabel(start);
-  const hasTurn = circularDifference(start, end) >= summary.directionChangeThresholdDeg;
   return {
     text: (minimum, maximum, gust) => `Ветер: ${direction} ${round(minimum)}–${round(maximum)} м/с · порывы ${gust}.`,
-    turn: hasTurn ? `${direction} → ${windDirectionLabel(end)}` : null,
     directionUnavailable: false,
   };
 }
@@ -222,7 +217,13 @@ function renderPointWindDynamics(
     && ecmwf.windChangeStartedAt && gfs.windChangeStartedAt
     && ecmwf.windChangeAt && gfs.windChangeAt
     && Math.sign(ecmwf.windChangeMs) === Math.sign(gfs.windChangeMs)
-    && eventTimesAgree(ecmwf, gfs, summary.eventTimeAgreementHours)) {
+    && timeRangesAgree(
+      ecmwf.windChangeStartedAt,
+      ecmwf.windChangeAt,
+      gfs.windChangeStartedAt,
+      gfs.windChangeAt,
+      summary.eventTimeAgreementHours,
+    )) {
     const minimum = Math.min(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
     const maximum = Math.max(Math.abs(ecmwf.windChangeMs), Math.abs(gfs.windChangeMs));
     const startedAt = new Date(Math.min(ecmwf.windChangeStartedAt.getTime(), gfs.windChangeStartedAt.getTime()));
@@ -237,6 +238,68 @@ function renderPointWindDynamics(
   return {
     summary: ecmwf && gfs ? "модели расходятся" : "сравнение неполное",
     details: [ecmwfDynamics.text, gfsDynamics.text],
+  };
+}
+
+function renderPointWindTurn(
+  point: BulletinSummary["pointSummaries"][number],
+  summary: BulletinSummary,
+  timeZone: string,
+): { summary: string; details: string[] } | null {
+  const ecmwf = point.models.ecmwf;
+  const gfs = point.models.gfs;
+  const ecmwfTurn = renderModelWindTurn(ecmwf, "ECMWF", timeZone);
+  const gfsTurn = renderModelWindTurn(gfs, "GFS", timeZone);
+  if (!ecmwfTurn.hasTurn && !gfsTurn.hasTurn) return null;
+
+  if (ecmwfTurn.hasTurn && gfsTurn.hasTurn && ecmwf && gfs
+    && ecmwf.directionChangeStartDeg !== null && gfs.directionChangeStartDeg !== null
+    && ecmwf.directionChangeEndDeg !== null && gfs.directionChangeEndDeg !== null
+    && ecmwf.directionChangeStartedAt && gfs.directionChangeStartedAt
+    && ecmwf.directionChangeAt && gfs.directionChangeAt
+    && circularDifference(ecmwf.directionChangeStartDeg, gfs.directionChangeStartDeg)
+      <= summary.directionAgreementThresholdDeg
+    && circularDifference(ecmwf.directionChangeEndDeg, gfs.directionChangeEndDeg)
+      <= summary.directionAgreementThresholdDeg
+    && timeRangesAgree(
+      ecmwf.directionChangeStartedAt,
+      ecmwf.directionChangeAt,
+      gfs.directionChangeStartedAt,
+      gfs.directionChangeAt,
+      summary.eventTimeAgreementHours,
+    )) {
+    const startDirection = averageDirection(ecmwf.directionChangeStartDeg, gfs.directionChangeStartDeg);
+    const endDirection = averageDirection(ecmwf.directionChangeEndDeg, gfs.directionChangeEndDeg);
+    const startedAt = new Date(Math.min(
+      ecmwf.directionChangeStartedAt.getTime(),
+      gfs.directionChangeStartedAt.getTime(),
+    ));
+    const endedAt = new Date(Math.max(ecmwf.directionChangeAt.getTime(), gfs.directionChangeAt.getTime()));
+    return {
+      summary: `${windDirectionLabel(startDirection)} → ${windDirectionLabel(endDirection)} ${formatTimeRange(startedAt, endedAt, timeZone)}`,
+      details: [],
+    };
+  }
+
+  return {
+    summary: ecmwf && gfs ? "модели расходятся" : "сравнение неполное",
+    details: [ecmwfTurn.text, gfsTurn.text],
+  };
+}
+
+function renderModelWindTurn(
+  model: ModelSummary | undefined,
+  label: string,
+  timeZone: string,
+): { hasTurn: boolean; text: string } {
+  if (!model) return { hasTurn: false, text: `${label}: нет данных` };
+  if (model.directionChangeStartDeg === null || model.directionChangeEndDeg === null
+    || !model.directionChangeStartedAt || !model.directionChangeAt) {
+    return { hasTurn: false, text: `${label}: без заметного поворота` };
+  }
+  return {
+    hasTurn: true,
+    text: `${label}: ${windDirectionLabel(model.directionChangeStartDeg)} → ${windDirectionLabel(model.directionChangeEndDeg)} ${formatTimeRange(model.directionChangeStartedAt, model.directionChangeAt, timeZone)}`,
   };
 }
 
@@ -259,18 +322,16 @@ function renderModelWindDynamics(
   };
 }
 
-function eventTimesAgree(
-  ecmwf: ModelSummary,
-  gfs: ModelSummary,
+function timeRangesAgree(
+  leftStartedAt: Date,
+  leftAt: Date,
+  rightStartedAt: Date,
+  rightAt: Date,
   thresholdHours: number,
 ): boolean {
-  if (!ecmwf.windChangeStartedAt || !gfs.windChangeStartedAt
-    || !ecmwf.windChangeAt || !gfs.windChangeAt) return false;
-  const endDifferenceHours = Math.abs(ecmwf.windChangeAt.getTime() - gfs.windChangeAt.getTime())
+  const endDifferenceHours = Math.abs(leftAt.getTime() - rightAt.getTime())
     / 3_600_000;
-  const startDifferenceHours = Math.abs(
-    ecmwf.windChangeStartedAt.getTime() - gfs.windChangeStartedAt.getTime(),
-  ) / 3_600_000;
+  const startDifferenceHours = Math.abs(leftStartedAt.getTime() - rightStartedAt.getTime()) / 3_600_000;
   return endDifferenceHours <= thresholdHours && startDifferenceHours <= thresholdHours;
 }
 
@@ -366,9 +427,9 @@ export function windDirectionLabel(degrees: number): string {
 }
 
 export function hasDirectionTurn(model: ModelSummary, threshold: number): boolean {
-  return model.directionStartDeg !== null
-    && model.directionEndDeg !== null
-    && circularDifference(model.directionStartDeg, model.directionEndDeg) >= threshold;
+  return model.directionChangeStartDeg !== null
+    && model.directionChangeEndDeg !== null
+    && circularDifference(model.directionChangeStartDeg, model.directionChangeEndDeg) >= threshold;
 }
 
 export function escapeHtml(value: string): string {

@@ -52,7 +52,15 @@ function renderModel(model: ModelSummary, timeZone: string): string {
       : `около ${formatTime(model.windChangeAt, timeZone)}`;
     parts.push(`${action} на ${formatNumber(Math.abs(model.windChangeMs))} м/с ${timing}`);
   }
+  const turn = formatDirectionTurn(model, timeZone);
+  if (turn) parts.push(`поворот ${turn}`);
   return parts.join("; ");
+}
+
+function formatDirectionTurn(model: ModelSummary, timeZone: string): string | null {
+  if (model.directionChangeStartDeg === null || model.directionChangeEndDeg === null
+    || !model.directionChangeStartedAt || !model.directionChangeAt) return null;
+  return `${windDirectionLabel(model.directionChangeStartDeg)} → ${windDirectionLabel(model.directionChangeEndDeg)} ${formatTimeRange(model.directionChangeStartedAt, model.directionChangeAt, timeZone)}`;
 }
 
 function renderDifference(point: PointSummary): string | null {

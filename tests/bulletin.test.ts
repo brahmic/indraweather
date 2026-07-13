@@ -26,6 +26,10 @@ const summary: BulletinSummary = {
         maxGustMs: 10,
         directionStartDeg: 270,
         directionEndDeg: 315,
+        directionChangeStartDeg: 270,
+        directionChangeEndDeg: 315,
+        directionChangeStartedAt: new Date("2026-07-11T09:00:00Z"),
+        directionChangeAt: new Date("2026-07-11T12:00:00Z"),
         windChangeMs: 4,
         windChangeStartedAt: new Date("2026-07-11T09:00:00Z"),
         windChangeAt: new Date("2026-07-11T12:00:00Z"),
@@ -154,7 +158,7 @@ describe("renderBulletin", () => {
       timeZone: "Europe/Moscow",
     });
 
-    expect(result).toContain("Точка <1>\nВетер: 3–7 м/с · порывы до 10 м/с.\nДинамика: сравнение неполное.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: нет данных.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.");
+    expect(result).toContain("Точка <1>\nВетер: 3–7 м/с · порывы до 10 м/с.\nДинамика: сравнение неполное.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: нет данных.\nПоворот: сравнение неполное.\nECMWF: З → СЗ с 12:00 до 15:00 МСК.\nGFS: нет данных.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.");
     expect(result).not.toContain("\nВолна и вода\n");
     expect(result).toContain("Выпуск\nИзменение: нет предыдущего планового выпуска для сравнения.\nПрогноз морской модели: в губах, за островами и у берега условия могут отличаться.");
   });
@@ -171,6 +175,8 @@ describe("renderBulletin", () => {
             model: "gfs",
             directionStartDeg: 250,
             directionEndDeg: 320,
+            directionChangeStartDeg: 250,
+            directionChangeEndDeg: 320,
             windChangeMs: 0,
             windChangeStartedAt: null,
             windChangeAt: null,
@@ -199,7 +205,7 @@ describe("renderBulletin", () => {
       timeZone: "Europe/Moscow",
     });
 
-    expect(result).toContain("Ветер: З 3–7 м/с · порывы до 10 м/с.\nДинамика: модели расходятся.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: без заметного изменения.\nПоворот: З → СЗ.");
+    expect(result).toContain("Ветер: З 3–7 м/с · порывы до 10 м/с.\nДинамика: модели расходятся.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: без заметного изменения.\nПоворот: З → СЗ с 12:00 до 15:00 МСК.");
   });
 
   it("adds agreed wind dynamics with a combined time interval to a control point", () => {
@@ -315,6 +321,8 @@ describe("renderBulletin", () => {
             model: "gfs",
             directionStartDeg: 90,
             directionEndDeg: 135,
+            directionChangeStartDeg: 90,
+            directionChangeEndDeg: 135,
           },
         },
       })),
@@ -333,6 +341,9 @@ describe("renderBulletin", () => {
     });
 
     expect(result).toContain("Направление: модели расходятся.");
+    expect(result).toContain(
+      "Поворот: модели расходятся.\nECMWF: З → СЗ с 12:00 до 15:00 МСК.\nGFS: В → ЮВ с 12:00 до 15:00 МСК.",
+    );
   });
 });
 

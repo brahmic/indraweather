@@ -1202,6 +1202,12 @@ function reviveSummary(raw: unknown): BulletinSummary {
   const summary = raw as BulletinSummary;
   for (const point of summary.pointSummaries) {
     for (const model of Object.values(point.models)) {
+      if (model?.directionChangeStartedAt && !(model.directionChangeStartedAt instanceof Date)) {
+        model.directionChangeStartedAt = new Date(model.directionChangeStartedAt);
+      }
+      if (model?.directionChangeAt && !(model.directionChangeAt instanceof Date)) {
+        model.directionChangeAt = new Date(model.directionChangeAt);
+      }
       if (model?.windChangeStartedAt && !(model.windChangeStartedAt instanceof Date)) {
         model.windChangeStartedAt = new Date(model.windChangeStartedAt);
       }

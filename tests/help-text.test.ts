@@ -15,7 +15,7 @@ describe("formatHelpHtml", () => {
     expect(text).toContain("Прилив в строке точки показывает направление воды и начало отлива");
     expect(text).toContain("<code>/map</code>");
     expect(text).toContain("На обзорных снимках отмечены все активные контрольные точки");
-    expect(text).toContain("Модельная карта из <code>/details</code> строится по свежему выпуску");
+    expect(text).toContain("Модельная карта в альбоме бюллетеня строится по свежему выпуску");
     expect(text).toContain("сама ничего не отправляет");
     expect(text).toContain("после <code>/start</code>");
     expect(text).not.toContain("<code>/points</code>");

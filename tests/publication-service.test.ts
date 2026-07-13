@@ -126,7 +126,7 @@ describe("PublicationService", () => {
     await expect(service.getClouds()).resolves.toEqual([image, infrared]);
   });
 
-  it("adds the model map to details without changing the main bulletin", async () => {
+  it("adds the model map to the main bulletin and keeps details text-only", async () => {
     const createdAt = new Date("2026-07-13T09:00:00Z");
     const map = { kind: "image", filename: "forecast-map.png" } as never;
     const forecastMap = { get: vi.fn(async () => map) };
@@ -135,6 +135,7 @@ describe("PublicationService", () => {
         getFreshOrRun: async () => ({
           id: "bulletin-1",
           runId: "run-1",
+          content: "weather",
           summary: {
             generatedAt: createdAt.toISOString(),
             horizonHours: 24,
@@ -159,8 +160,53 @@ describe("PublicationService", () => {
     const details = await service.getFreshDetails();
 
     expect(details.text).toContain("Детализация по моделям");
-    expect(details.attachments).toEqual([map]);
+    expect(details).not.toHaveProperty("attachments");
+    expect(forecastMap.get).not.toHaveBeenCalled();
+
+    const bulletin = await service.getFreshOrRun();
+
+    expect(bulletin.attachments).toEqual([map]);
     expect(forecastMap.get).toHaveBeenCalledWith("run-1", createdAt);
+  });
+
+  it("orders overview, detailed Sentinel-3, and model map in a bulletin album", async () => {
+    const createdAt = new Date("2026-07-13T09:00:00Z");
+    const overview = { kind: "image", filename: "overview.png" } as never;
+    const detail = { kind: "image", filename: "detail.png" } as never;
+    const map = { kind: "image", filename: "forecast.png" } as never;
+    const service = new PublicationService(
+      {
+        getFreshOrRun: async () => ({
+          id: "bulletin-1",
+          runId: "run-1",
+          content: "weather",
+          contentFormat: "plain",
+          summary: {},
+          createdAt,
+        }),
+      } as never,
+      { getLatest: async () => overview } as never,
+      null,
+      {
+        getLatest: async () => ({
+          status: "available",
+          attachment: detail,
+          coveragePercent: 100,
+          partial: null,
+        }),
+      } as never,
+      null,
+      null,
+      null,
+      { get: async () => map } as never,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow",
+      { warn: () => undefined } as never,
+    );
+
+    const publication = await service.getFreshOrRun();
+
+    expect(publication.attachments).toEqual([overview, detail, map]);
   });
 
   it("keeps animations out of regular bulletins and exposes cloud motion on demand", async () => {

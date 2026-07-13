@@ -55,7 +55,7 @@ describe("MaxChannel", () => {
     await channel.stop();
   });
 
-  it("uploads each image once for a multi-recipient broadcast", async () => {
+  it("uploads a shared image album once and sends it as one post to each recipient", async () => {
     const database = databaseStub();
     database.getActiveRecipientIds.mockResolvedValue(["41", "42"]);
     database.claimDelivery.mockResolvedValue(true);
@@ -64,20 +64,18 @@ describe("MaxChannel", () => {
     const publication: Publication = {
       id: "bulletin-1",
       text: "weather",
-      attachments: [{
-        kind: "image",
-        data: new Uint8Array([1, 2, 3]),
-        contentType: "image/png",
-        filename: "satellite.png",
-        caption: "Satellite",
-        source: "EUMETSAT",
-        observedAt: new Date(),
-      }],
+      attachments: [imageAttachment("satellite.png"), imageAttachment("forecast.png")],
     };
 
     await channel.broadcast(publication);
 
     expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "satellite.png");
+    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "forecast.png");
+    const sendMessageCalls = api.sendMessage.mock.calls as unknown as Array<[number, string, Array<unknown>?]>;
+    const albums = sendMessageCalls.filter(([, text, attachments]) =>
+      text === "<b>Спутниковые снимки и прогноз</b>" && Array.isArray(attachments));
+    expect(albums).toHaveLength(2);
+    expect(albums.every(([, , attachments]) => attachments?.length === 2)).toBe(true);
     expect(database.markDelivery).toHaveBeenCalledTimes(2);
   });
 
@@ -320,7 +318,6 @@ describe("MaxChannel", () => {
     const publications = {
       getFreshDetails: vi.fn(async () => ({
         text: "details",
-        attachments: [mapImage()],
       })),
     };
     const channel = new MaxChannel(
@@ -343,7 +340,7 @@ describe("MaxChannel", () => {
     });
     expect(publications.getFreshDetails).toHaveBeenCalledOnce();
     expect(api.sendMessage).toHaveBeenCalledWith(42, expect.stringContaining("<b>details</b>"));
-    expect(api.uploadImage).toHaveBeenCalledWith(expect.any(Uint8Array), "map.png");
+    expect(api.uploadImage).not.toHaveBeenCalled();
     await channel.stop();
   });
 
@@ -772,11 +769,15 @@ function messageUpdate(text: string) {
 }
 
 function mapImage() {
+  return imageAttachment("map.png");
+}
+
+function imageAttachment(filename: string) {
   return {
     kind: "image" as const,
     data: new Uint8Array([1, 2, 3]),
     contentType: "image/png" as const,
-    filename: "map.png",
+    filename,
     caption: "Спутниковый снимок",
     source: "EUMETSAT",
     observedAt: new Date(),

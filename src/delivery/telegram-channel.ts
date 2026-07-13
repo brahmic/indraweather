@@ -284,7 +284,18 @@ export class TelegramChannel implements DeliveryChannel {
 
   private async sendPublication(recipientId: string, publication: Publication) {
     const messages = [];
-    for (const attachment of publication.attachments) {
+    const images = publication.attachments.filter((attachment) => attachment.kind === "image");
+    if (images.length >= 2) {
+      messages.push(...await this.bot.api.sendMediaGroup(recipientId, images.map((attachment) =>
+        InputMediaBuilder.photo(new InputFile(attachment.data, attachment.filename), {
+          caption: attachment.caption,
+        }))));
+    } else {
+      for (const attachment of images) {
+        messages.push(await this.sendAttachment(recipientId, attachment));
+      }
+    }
+    for (const attachment of publication.attachments.filter((item) => item.kind !== "image")) {
       messages.push(await this.sendAttachment(recipientId, attachment));
     }
     messages.push(...await this.sendContent(recipientId, publication.text, this.bulletinKeyboard()));
@@ -313,13 +324,6 @@ export class TelegramChannel implements DeliveryChannel {
     try {
       const details = await this.publications.getFreshDetails();
       await this.sendContent(String(chatId), details.text);
-      for (const attachment of details.attachments) {
-        try {
-          await this.sendAttachment(chatId, attachment);
-        } catch (error) {
-          this.logger.warn({ err: error, filename: attachment.filename }, "Telegram forecast map delivery failed");
-        }
-      }
     } catch (error) {
       this.logger.error({ error }, "Detailed model bulletin failed");
       await this.bot.api.sendMessage(chatId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");

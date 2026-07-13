@@ -86,6 +86,7 @@ interface MaxApi {
 }
 
 interface PreparedAttachment {
+  kind: DeliveryAttachment["kind"];
   caption: string;
   attachment: MaxMessageAttachment;
 }
@@ -354,13 +355,6 @@ export class MaxChannel implements DeliveryChannel {
     try {
       const details = await this.publications.getFreshDetails();
       await this.sendText(userId, details.text);
-      for (const attachment of details.attachments) {
-        try {
-          await this.sendAttachment(userId, attachment);
-        } catch (error) {
-          this.logger.warn({ err: error, filename: attachment.filename }, "MAX forecast map delivery failed");
-        }
-      }
     } catch (error) {
       this.logger.error({ error }, "MAX detailed model bulletin failed");
       await this.api.sendMessage(userId, "Не удалось сформировать детализацию: погодные данные временно недоступны.");
@@ -715,6 +709,7 @@ export class MaxChannel implements DeliveryChannel {
           ? await this.api.uploadImage(attachment.data, attachment.filename)
           : await this.api.uploadVideo(attachment.data, attachment.filename);
         attachments.push({
+          kind: attachment.kind,
           caption: attachment.caption,
           attachment: uploaded,
         });
@@ -782,7 +777,24 @@ export class MaxChannel implements DeliveryChannel {
     prepared: Promise<PreparedAttachment[]>,
   ): Promise<string[]> {
     const messageIds: string[] = [];
-    for (const item of await prepared) {
+    const attachments = await prepared;
+    const images = attachments.filter((item) => item.kind === "image");
+    if (images.length >= 2) {
+      messageIds.push(await this.api.sendMessage(
+        userId,
+        "<b>Спутниковые снимки и прогноз</b>",
+        images.map((item) => item.attachment),
+      ));
+    } else {
+      for (const item of images) {
+        messageIds.push(await this.api.sendMessage(
+          userId,
+          formatPostHtml(item.caption, [], true),
+          [item.attachment],
+        ));
+      }
+    }
+    for (const item of attachments.filter((attachment) => attachment.kind !== "image")) {
       messageIds.push(await this.api.sendMessage(
         userId,
         formatPostHtml(item.caption, [], true),

@@ -18,7 +18,6 @@ import type { ForecastMapService } from "./forecast-map-service.js";
 
 export interface DetailsPublication {
   text: string;
-  attachments: DeliveryAttachment[];
 }
 
 export class PublicationService {
@@ -47,17 +46,8 @@ export class PublicationService {
 
   async getFreshDetails(): Promise<DetailsPublication> {
     const bulletin = await this.bulletins.getFreshOrRun();
-    const attachments: DeliveryAttachment[] = [];
-    if (this.forecastMap) {
-      try {
-        attachments.push(await this.forecastMap.get(bulletin.runId, bulletin.createdAt));
-      } catch (error) {
-        this.logger.warn({ error, bulletinId: bulletin.id }, "Forecast map is unavailable");
-      }
-    }
     return {
       text: renderModelDetails(bulletin.summary, this.timeZone),
-      attachments,
     };
   }
 
@@ -156,6 +146,14 @@ export class PublicationService {
           );
         }
         text += `\n\n${formatDetailedSatelliteSkip(detail, this.timeZone)}`;
+      }
+    }
+    if (this.forecastMap) {
+      try {
+        attachments.push(await this.forecastMap.get(bulletin.runId, bulletin.createdAt));
+      } catch (error) {
+        this.logger.warn({ error, bulletinId: bulletin.id }, "Forecast map is unavailable");
+        text += "\n\nМодельная карта прогноза временно недоступна.";
       }
     }
     return {

@@ -93,6 +93,12 @@ export class DetailedSatelliteService {
         evaluatedImages += 1;
         bestCoverage = Math.max(bestCoverage, coveragePercent);
         if (coveragePercent < this.options.minCoveragePercent) continue;
+        const partial = coveragePercent < this.options.preferredCoveragePercent
+          ? {
+            preferredCoveragePercent: this.options.preferredCoveragePercent,
+            nextPassAt: await this.passes.nextPass(now),
+          }
+          : null;
         return {
           status: "available",
           coveragePercent,
@@ -100,16 +106,13 @@ export class DetailedSatelliteService {
             product,
             image.data,
             coveragePercent,
+            now,
+            partial !== null,
             images,
             coastlineOverlay,
             windOverlay,
           ),
-          partial: coveragePercent < this.options.preferredCoveragePercent
-            ? {
-              preferredCoveragePercent: this.options.preferredCoveragePercent,
-              nextPassAt: await this.passes.nextPass(now),
-            }
-            : null,
+          partial,
         };
       } catch {
         imageErrors += 1;
@@ -129,6 +132,8 @@ export class DetailedSatelliteService {
     product: SentinelProduct,
     image: Uint8Array,
     coveragePercent: number,
+    now: Date,
+    partial: boolean,
     images: EumetviewClient,
     coastlineOverlay: CoastlineOverlayService,
     windOverlay: WindOverlayService,
@@ -141,7 +146,8 @@ export class DetailedSatelliteService {
       new Uint8Array(flattened),
       await images.getCoastline(),
     );
-    const data = await windOverlay.apply(coastlined, product.observedAt);
+    const withWind = await windOverlay.apply(coastlined, product.observedAt);
+    const data = await this.addFlightOverlay(withWind, product, coveragePercent, now, partial);
     if (data.byteLength > this.options.maxImageBytes) {
       throw new Error(`Detailed satellite image exceeds ${this.options.maxImageBytes} bytes`);
     }
@@ -154,6 +160,44 @@ export class DetailedSatelliteService {
       source: "EUMETSAT Sentinel-3 OLCI / EUMETView",
       observedAt: product.observedAt,
     };
+  }
+
+  private async addFlightOverlay(
+    image: Uint8Array,
+    product: SentinelProduct,
+    coveragePercent: number,
+    now: Date,
+    partial: boolean,
+  ): Promise<Uint8Array> {
+    const metadata = await sharp(image).metadata();
+    const width = metadata.width;
+    const height = metadata.height;
+    if (!width || !height || width < 320 || height < 160) return image;
+    const panelWidth = Math.min(width - 24, 580);
+    const panelHeight = 58;
+    const panelX = 12;
+    const panelY = height - panelHeight - 12;
+    const observedAt = new Intl.DateTimeFormat("ru-RU", {
+      timeZone: this.options.timeZone,
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(product.observedAt);
+    const ageHours = Math.max(0, (now.getTime() - product.observedAt.getTime()) / 3_600_000);
+    const warning = partial ? `<g transform="translate(${panelX + panelWidth - 34} ${panelY + 12})">
+      <path d="M11 0 L22 20 H0 Z" fill="#ffd54f" stroke="#17242b" stroke-width="1.5"/>
+      <text x="11" y="15" text-anchor="middle" fill="#17242b" font-family="Noto Sans, sans-serif" font-size="14" font-weight="800">!</text>
+    </g>` : "";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <g>
+        <rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" rx="3" fill="#101820" fill-opacity="0.88"/>
+        <text x="${panelX + 12}" y="${panelY + 21}" fill="#ffffff" font-family="Noto Sans, sans-serif" font-size="14" font-weight="700">SENTINEL-3 ${product.platform === "Sentinel-3A" ? "A" : "B"} · ДЕТАЛЬНЫЙ СНИМОК</text>
+        <text x="${panelX + 12}" y="${panelY + 43}" fill="#d8e5e9" font-family="Noto Sans, sans-serif" font-size="12" font-weight="600">ПРОЛЁТ: ${observedAt} МСК · ВОЗРАСТ: ${formatFlightAge(ageHours)} · ПОКРЫТИЕ: ${Math.round(coveragePercent)}%</text>
+        ${warning}
+      </g>
+    </svg>`;
+    return new Uint8Array(await sharp(image).composite([{ input: Buffer.from(svg) }]).png().toBuffer());
   }
 
   private caption(product: SentinelProduct, coveragePercent: number): string {
@@ -196,4 +240,8 @@ function layerFor(platform: SentinelPlatform): SatelliteLayer {
 
 function filenameTime(date: Date): string {
   return date.toISOString().replaceAll(":", "-").replace(".000Z", "Z");
+}
+
+function formatFlightAge(hours: number): string {
+  return hours < 1 ? "менее 1 ч" : `${Math.round(hours)} ч`;
 }

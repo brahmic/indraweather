@@ -152,6 +152,49 @@ describe("TelegramChannel /weather", () => {
     }));
     expect(publications.getFreshOrRun).toHaveBeenCalledOnce();
   });
+
+  it("sends bulletin images as one media album before the text and controls", async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const publications = {
+      getFreshOrRun: vi.fn(async () => ({
+        id: "bulletin-1",
+        text: "Кемь — Кандалакша · гидрометеосводка",
+        attachments: [bulletinImage("overview.png"), bulletinImage("forecast.png")],
+      })),
+    };
+    const channel = new TelegramChannel(
+      "123:test",
+      { getMapViewport: vi.fn(async () => null) } as never,
+      publications as never,
+      [],
+      { timeZone: "Europe/Moscow", satellite: { bbox: [30, 64, 36, 68], width: 1000, height: 800 } } as never,
+      { error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as never,
+    );
+    channel.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, body: payload as Record<string, unknown> });
+      const message = {
+        message_id: calls.length,
+        date: 1_783_700_000,
+        chat: { id: 123, type: "private" },
+        text: "ok",
+      };
+      return { ok: true, result: method === "sendMediaGroup" ? [message, message] : method === "deleteMessage" ? true : message } as never;
+    });
+    channel.bot.botInfo = testBotInfo();
+
+    await channel.bot.handleUpdate(commandUpdate("/weather", 14));
+
+    expect(calls.map((call) => call.method)).toEqual([
+      "sendMessage",
+      "sendMediaGroup",
+      "sendMessage",
+      "deleteMessage",
+    ]);
+    expect(calls[1]?.body.media).toHaveLength(2);
+    expect(calls[2]?.body.reply_markup).toEqual(expect.objectContaining({
+      inline_keyboard: expect.any(Array),
+    }));
+  });
 });
 
 describe("TelegramChannel /update", () => {
@@ -365,20 +408,11 @@ describe("TelegramChannel /clouds", () => {
 });
 
 describe("TelegramChannel /details", () => {
-  it("sends the model text followed by its forecast map", async () => {
+  it("sends only model text", async () => {
     const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
     const publications = {
       getFreshDetails: vi.fn(async () => ({
         text: "Детализация по моделям · 13 июля",
-        attachments: [{
-          kind: "image" as const,
-          data: new Uint8Array([1, 2, 3]),
-          contentType: "image/png" as const,
-          filename: "forecast-map.png",
-          caption: "Модельная карта",
-          source: "Open-Meteo",
-          observedAt: new Date(),
-        }],
       })),
     };
     const channel = new TelegramChannel(
@@ -406,8 +440,7 @@ describe("TelegramChannel /details", () => {
     await channel.bot.handleUpdate(commandUpdate("/details", 13));
 
     expect(publications.getFreshDetails).toHaveBeenCalledOnce();
-    expect(calls.map((call) => call.method)).toEqual(["sendChatAction", "sendMessage", "sendPhoto"]);
-    expect(calls[2]?.body.caption).toBe("Модельная карта");
+    expect(calls.map((call) => call.method)).toEqual(["sendChatAction", "sendMessage"]);
   });
 });
 
@@ -659,6 +692,18 @@ function commandUpdate(text: string, updateId: number) {
       text,
       entities: [{ type: "bot_command" as const, offset: 0, length: text.length }],
     },
+  };
+}
+
+function bulletinImage(filename: string) {
+  return {
+    kind: "image" as const,
+    data: new Uint8Array([1, 2, 3]),
+    contentType: "image/png" as const,
+    filename,
+    caption: filename,
+    source: "test",
+    observedAt: new Date(),
   };
 }
 

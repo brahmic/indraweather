@@ -80,9 +80,19 @@ export class PublicationService {
         this.logger.warn({ error }, "Infrared cloud image is unavailable");
         return null;
       });
+    const detailed = this.detailedSatellite?.getLatest(new Date(), viewport)
+      .then((result) => result.status === "available" ? result.attachment : null)
+      .catch((error: unknown) => {
+        this.logger.warn({ error }, "Detailed cloud image is unavailable");
+        return null;
+      });
     const attachments: DeliveryAttachment[] = [await diagnostic];
     if (infrared) {
       const image = await infrared;
+      if (image) attachments.push(image);
+    }
+    if (detailed) {
+      const image = await detailed;
       if (image) attachments.push(image);
     }
     return attachments;

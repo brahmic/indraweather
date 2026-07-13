@@ -83,15 +83,16 @@ describe("PublicationService", () => {
     expect(publication.text).not.toContain("/details");
   });
 
-  it("returns the current cloud diagnostic together with a static infrared image", async () => {
+  it("returns cloud diagnostics, infrared, and an available detailed bay image", async () => {
     const image = { kind: "image", filename: "clouds.png" } as never;
     const infrared = { kind: "image", filename: "infrared.png" } as never;
+    const detailed = { kind: "image", filename: "sentinel-3.png" } as never;
     const cloudAnimation = { getLatest: vi.fn() };
     const service = new PublicationService(
       {} as never,
       { getLatestInfraredSnapshot: async () => infrared } as never,
       null,
-      null,
+      { getLatest: async () => ({ status: "available", attachment: detailed }) } as never,
       { getLatest: async () => image } as never,
       cloudAnimation as never,
       null,
@@ -101,8 +102,28 @@ describe("PublicationService", () => {
       { warn: () => undefined } as never,
     );
 
-    await expect(service.getClouds()).resolves.toEqual([image, infrared]);
+    await expect(service.getClouds()).resolves.toEqual([image, infrared, detailed]);
     expect(cloudAnimation.getLatest).not.toHaveBeenCalled();
+  });
+
+  it("omits a skipped detailed bay image without changing the static cloud response", async () => {
+    const image = { kind: "image", filename: "clouds.png" } as never;
+    const infrared = { kind: "image", filename: "infrared.png" } as never;
+    const service = new PublicationService(
+      {} as never,
+      { getLatestInfraredSnapshot: async () => infrared } as never,
+      null,
+      { getLatest: async () => ({ status: "skipped", reason: { code: "stale" } }) } as never,
+      { getLatest: async () => image } as never,
+      null,
+      null,
+      null,
+      { get: async () => "point forecast" } as never,
+      "Europe/Moscow",
+      { warn: () => undefined } as never,
+    );
+
+    await expect(service.getClouds()).resolves.toEqual([image, infrared]);
   });
 
   it("adds the model map to details without changing the main bulletin", async () => {

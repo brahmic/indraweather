@@ -316,6 +316,14 @@ describe("TelegramChannel /clouds", () => {
         caption: "ИК",
         source: "EUMETSAT",
         observedAt: new Date(),
+      }, {
+        kind: "image" as const,
+        data: new Uint8Array([7, 8, 9]),
+        contentType: "image/png" as const,
+        filename: "sentinel-3.png",
+        caption: "Кандалакшский залив крупно",
+        source: "EUMETSAT",
+        observedAt: new Date(),
       }]),
     };
     const channel = new TelegramChannel(
@@ -342,7 +350,13 @@ describe("TelegramChannel /clouds", () => {
 
     await channel.bot.handleUpdate(commandUpdate("/clouds", 10));
 
-    expect(calls.map((call) => call.method)).toEqual(["sendMessage", "sendPhoto", "sendPhoto", "deleteMessage"]);
+    expect(calls.map((call) => call.method)).toEqual([
+      "sendMessage",
+      "sendPhoto",
+      "sendPhoto",
+      "sendPhoto",
+      "deleteMessage",
+    ]);
     expect(calls[0]?.body.text).toContain("Собираю информацию об облачности");
     expect(publications.getClouds).toHaveBeenCalledWith(expect.objectContaining({
       bbox: [30, 64, 36, 68],

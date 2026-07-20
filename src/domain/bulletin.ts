@@ -26,6 +26,7 @@ export interface BulletinInput {
   previousSummary: BulletinSummary | null;
   nextScheduledAt: Date | null;
   unavailableModels: string[];
+  fallbackModels?: string[];
   warningSourceUnavailable: boolean;
   marine: MarinePointSummary[];
   marineSourceUnavailable: boolean;
@@ -63,6 +64,9 @@ export function renderBulletin(input: BulletinInput): string {
 
   if (input.unavailableModels.length > 0) {
     lines.push("", `Неполные данные: ${input.unavailableModels.join(", ")}.`);
+  }
+  if (input.fallbackModels && input.fallbackModels.length > 0) {
+    lines.push("", `Резервные данные предыдущего сбора: ${input.fallbackModels.join(", ")}.`);
   }
 
   lines.push(

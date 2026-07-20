@@ -58,7 +58,9 @@ async function fetchWithRetry(
       lastError = error;
     }
     if (attempt < options.retries) {
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 300 * 2 ** attempt));
+      const backoffMs = 300 * 2 ** attempt;
+      const jitterMs = Math.floor(Math.random() * 250);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, backoffMs + jitterMs));
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));

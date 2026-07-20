@@ -362,7 +362,7 @@ const bulletinService = new BulletinService(
   points,
   config,
   logger,
-  () => scheduler?.nextRun() ?? null,
+  (after) => scheduler?.nextRun(after) ?? null,
 );
 const pointForecasts = new PointForecastService(database, bulletinService, points, config);
 const publicationService = new PublicationService(
@@ -433,6 +433,7 @@ const deliveryService = new DeliveryService(
 scheduler = new Scheduler(
   config.scheduleTimes,
   config.timeZone,
+  config.schedulePrepareMinutes,
   config.scheduleRetryMinutes,
   config.scheduleRecoveryHours,
   publicationService,

@@ -11,6 +11,7 @@ describe("Scheduler", () => {
     const scheduler = new Scheduler(
       [oneMinuteAgoInMoscow()],
       "Europe/Moscow",
+      10,
       15,
       8,
       publications as never,
@@ -36,6 +37,7 @@ describe("Scheduler", () => {
     const scheduler = new Scheduler(
       [oneMinuteAgoInMoscow()],
       "Europe/Moscow",
+      10,
       15,
       8,
       publications as never,
@@ -48,6 +50,32 @@ describe("Scheduler", () => {
 
     expect(publications.run).not.toHaveBeenCalled();
     expect(delivery.broadcast).toHaveBeenCalledWith(publication);
+  });
+
+  it("publishes a fallback when collection fails", async () => {
+    const fallback = { id: "fallback-1", text: "previous weather", attachments: [] };
+    const publications = {
+      getScheduled: vi.fn(async () => null),
+      run: vi.fn(async () => { throw new Error("Open-Meteo unavailable"); }),
+      createScheduledFallback: vi.fn(async () => fallback),
+    };
+    const delivery = { broadcast: vi.fn(async () => undefined) };
+    const scheduler = new Scheduler(
+      [oneMinuteAgoInMoscow()],
+      "Europe/Moscow",
+      10,
+      15,
+      8,
+      publications as never,
+      delivery as never,
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+
+    await scheduler.start();
+    scheduler.stop();
+
+    expect(publications.createScheduledFallback).toHaveBeenCalledOnce();
+    expect(delivery.broadcast).toHaveBeenCalledWith(fallback);
   });
 });
 

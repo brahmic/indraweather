@@ -80,7 +80,9 @@ describe("loadConfig", () => {
       directory: "/var/lib/indra/cloud-animation",
     });
     expect(config).toMatchObject({
+      schedulePrepareMinutes: 10,
       scheduleRecoveryHours: 8,
+      weatherFallbackMaxAgeHours: 12,
       deliveryRetry: { intervalSeconds: 30, maxAttempts: 5 },
       forecastDataRetentionDays: 90,
       imageCacheMaxEntries: 16,

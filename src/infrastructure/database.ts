@@ -8,6 +8,7 @@ import type {
   MarineForecastValue,
   OfficialWarning,
   TideExtreme,
+  WeatherModel,
 } from "../domain/types.js";
 
 export interface BulletinRecord {
@@ -530,6 +531,67 @@ export class Database {
       WHERE run_id = $1 AND point_id = $2
       ORDER BY forecast_at, model
     `, [runId, pointId]);
+    return result.rows.map((row) => ({
+      pointId: row.point_id,
+      model: row.model,
+      forecastAt: row.forecast_at,
+      receivedAt: row.received_at,
+      windSpeedMs: row.wind_speed_ms,
+      windGustMs: row.wind_gust_ms,
+      windDirectionDeg: row.wind_direction_deg,
+      precipitationMm: row.precipitation_mm,
+      precipitationProbabilityPct: row.precipitation_probability_pct,
+      weatherCode: row.weather_code,
+      visibilityKm: row.visibility_km,
+      pressureHpa: row.pressure_hpa,
+      temperatureC: row.temperature_c,
+    }));
+  }
+
+  async getLatestForecastValues(
+    pointId: string,
+    model: WeatherModel,
+    start: Date,
+    end: Date,
+    receivedAfter: Date,
+  ): Promise<ForecastValue[]> {
+    const result = await this.pool.query<{
+      point_id: string;
+      model: "ecmwf" | "gfs";
+      forecast_at: Date;
+      received_at: Date;
+      wind_speed_ms: number | null;
+      wind_gust_ms: number | null;
+      wind_direction_deg: number | null;
+      precipitation_mm: number | null;
+      precipitation_probability_pct: number | null;
+      weather_code: number | null;
+      visibility_km: number | null;
+      pressure_hpa: number | null;
+      temperature_c: number | null;
+    }>(`
+      WITH latest_run AS (
+        SELECT forecast.run_id
+        FROM forecast_values AS forecast
+        JOIN collection_runs AS runs ON runs.id = forecast.run_id
+        WHERE forecast.point_id = $1
+          AND forecast.model = $2
+          AND forecast.forecast_at BETWEEN $3 AND $4
+          AND forecast.received_at >= $5
+          AND runs.status IN ('succeeded', 'partial')
+        ORDER BY forecast.received_at DESC
+        LIMIT 1
+      )
+      SELECT point_id, model, forecast_at, received_at, wind_speed_ms, wind_gust_ms,
+             wind_direction_deg, precipitation_mm, precipitation_probability_pct,
+             weather_code, visibility_km, pressure_hpa, temperature_c
+      FROM forecast_values
+      WHERE run_id = (SELECT run_id FROM latest_run)
+        AND point_id = $1
+        AND model = $2
+        AND forecast_at BETWEEN $3 AND $4
+      ORDER BY forecast_at
+    `, [pointId, model, start, end, receivedAfter]);
     return result.rows.map((row) => ({
       pointId: row.point_id,
       model: row.model,

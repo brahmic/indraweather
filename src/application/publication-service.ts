@@ -61,6 +61,10 @@ export class PublicationService {
     return bulletin ? this.create(bulletin) : null;
   }
 
+  async createScheduledFallback(scheduledFor: Date): Promise<Publication> {
+    return this.create(await this.bulletins.createScheduledFallback(scheduledFor));
+  }
+
   async getFreshDetails(): Promise<DetailsPublication> {
     const bulletin = await this.bulletins.getFreshOrRun();
     return {

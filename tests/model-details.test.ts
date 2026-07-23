@@ -10,6 +10,10 @@ describe("renderModelDetails", () => {
     expect(text).toContain("Значения моделей не усредняются");
     expect(text).toContain("ECMWF: ветер 3–6 м/с");
     expect(text).toContain("GFS: ветер 5–9 м/с");
+    expect(text).toContain("влажность 78–96%");
+    expect(text).toContain("точка росы +6…+10 °C");
+    expect(text).toContain("ощущается как +5…+10 °C");
+    expect(text).toContain("в отдельные часы воздух близок к насыщению");
     expect(text).toContain("Расхождение: максимальный ветер 3 м/с, порывы 4 м/с");
     expect(text).toContain("усиление на 3 м/с с 12:00 до 15:00 МСК");
     expect(text).toContain("поворот ЮЗ → З с 12:00 до 15:00 МСК");
@@ -102,5 +106,12 @@ function model(
     pressureChangeHpa: modelName === "ecmwf" ? -3 : -5,
     minTemperatureC: 7,
     maxTemperatureC: 12,
+    minRelativeHumidityPct: modelName === "ecmwf" ? 78 : 72,
+    maxRelativeHumidityPct: modelName === "ecmwf" ? 96 : 88,
+    minDewPointC: modelName === "ecmwf" ? 6 : 4,
+    maxDewPointC: modelName === "ecmwf" ? 10 : 8,
+    minApparentTemperatureC: modelName === "ecmwf" ? 5 : 4,
+    maxApparentTemperatureC: modelName === "ecmwf" ? 10 : 11,
+    nearSaturation: modelName === "ecmwf",
   };
 }

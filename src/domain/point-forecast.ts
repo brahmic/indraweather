@@ -1,4 +1,5 @@
 import { windDirectionLabel } from "./bulletin.js";
+import { isNearSaturation } from "./analysis.js";
 import { summarizeWeatherCodes } from "./weather-condition.js";
 import type {
   ControlPoint,
@@ -92,6 +93,12 @@ function summarizeModel(values: ForecastValue[]): { text: string; maxWindMs: num
   const lastDirection = values.findLast((value) => value.windDirectionDeg !== null)?.windDirectionDeg ?? null;
   const minimumTemperature = minimum(values.map((value) => value.temperatureC));
   const maximumTemperature = maximum(values.map((value) => value.temperatureC));
+  const minimumApparentTemperature = minimum(values.map((value) => value.apparentTemperatureC));
+  const maximumApparentTemperature = maximum(values.map((value) => value.apparentTemperatureC));
+  const minimumHumidity = minimum(values.map((value) => value.relativeHumidityPct));
+  const maximumHumidity = maximum(values.map((value) => value.relativeHumidityPct));
+  const minimumDewPoint = minimum(values.map((value) => value.dewPointC));
+  const maximumDewPoint = maximum(values.map((value) => value.dewPointC));
   const parts = [
     `ветер ${formatNumber(minimum(wind.map((value) => value.windSpeedMs)))}–${formatNumber(maximum(wind.map((value) => value.windSpeedMs)))} м/с`,
     formatOptionalMaximum(values.map((value) => value.windGustMs), "порывы до ", " м/с"),
@@ -102,6 +109,16 @@ function summarizeModel(values: ForecastValue[]): { text: string; maxWindMs: num
     minimumTemperature === null || maximumTemperature === null
       ? null
       : `температура ${formatSigned(minimumTemperature)}…${formatSigned(maximumTemperature)} °C`,
+    minimumApparentTemperature === null || maximumApparentTemperature === null
+      ? null
+      : `ощущается как ${formatSigned(minimumApparentTemperature)}…${formatSigned(maximumApparentTemperature)} °C`,
+    minimumHumidity === null || maximumHumidity === null
+      ? null
+      : `влажность ${formatNumber(minimumHumidity)}–${formatNumber(maximumHumidity)}%`,
+    minimumDewPoint === null || maximumDewPoint === null
+      ? null
+      : `точка росы ${formatSigned(minimumDewPoint)}…${formatSigned(maximumDewPoint)} °C`,
+    values.some(isNearSaturation) ? "в отдельные часы воздух близок к насыщению" : null,
     formatOptionalMinimum(values.map((value) => value.visibilityKm), "видимость от ", " км"),
   ].filter((value): value is string => value !== null);
   return {

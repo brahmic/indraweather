@@ -28,6 +28,9 @@ describe("OpenMeteoClient", () => {
       hourly: {
         time: ["2026-07-11T01:00", "2026-07-11T02:00"],
         temperature_2m: [10, 11],
+        relative_humidity_2m: [80, 90],
+        dew_point_2m: [7, 9],
+        apparent_temperature: [8, 9],
         precipitation: [0, 0.4],
         precipitation_probability: [10, 70],
         weather_code: [2, 61],
@@ -47,12 +50,18 @@ describe("OpenMeteoClient", () => {
     expect(values[0]?.visibilityKm).toBe(12);
     expect(values[1]?.precipitationProbabilityPct).toBe(70);
     expect(values[1]?.weatherCode).toBe(61);
+    expect(values[1]?.relativeHumidityPct).toBe(90);
+    expect(values[1]?.dewPointC).toBe(9);
+    expect(values[1]?.apparentTemperatureC).toBe(9);
     const calledUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
     expect(calledUrl.pathname).toBe("/v1/gfs");
     expect(calledUrl.searchParams.get("cell_selection")).toBe("sea");
     expect(calledUrl.searchParams.get("timezone")).toBe("GMT");
     expect(calledUrl.searchParams.get("forecast_hours")).toBe("120");
     expect(calledUrl.searchParams.get("hourly")).toContain("weather_code");
+    expect(calledUrl.searchParams.get("hourly")).toContain("relative_humidity_2m");
+    expect(calledUrl.searchParams.get("hourly")).toContain("dew_point_2m");
+    expect(calledUrl.searchParams.get("hourly")).toContain("apparent_temperature");
   });
 
   it("collects multiple points in one request and maps responses by order", async () => {
@@ -86,6 +95,9 @@ function response(windSpeed: number) {
     hourly: {
       time: ["2026-07-11T01:00"],
       temperature_2m: [10],
+      relative_humidity_2m: [92],
+      dew_point_2m: [9],
+      apparent_temperature: [8],
       precipitation: [0],
       weather_code: [2],
       visibility: [12_000],

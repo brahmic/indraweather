@@ -66,6 +66,9 @@ function value(model: "ecmwf" | "gfs", day: number, wind: number, hour = 9): For
     visibilityKm: 10,
     pressureHpa: 1000,
     temperatureC: 8,
+    relativeHumidityPct: hour === 18 ? 94 : 76,
+    dewPointC: 7,
+    apparentTemperatureC: 6,
   };
 }
 

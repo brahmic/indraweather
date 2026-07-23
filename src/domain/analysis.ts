@@ -9,6 +9,9 @@ import type {
 } from "./types.js";
 import { WEATHER_MODELS } from "./types.js";
 
+const NEAR_SATURATION_HUMIDITY_PCT = 90;
+const NEAR_SATURATION_DEW_POINT_SPREAD_C = 2;
+
 export interface AnalysisThresholds {
   windChangeMs: number;
   windAgreementMs: number;
@@ -138,7 +141,22 @@ function summarizeModel(
       : lastPressure - firstPressure,
     minTemperatureC: min(series.map((item) => item.temperatureC)),
     maxTemperatureC: max(series.map((item) => item.temperatureC)),
+    minRelativeHumidityPct: min(series.map((item) => item.relativeHumidityPct)),
+    maxRelativeHumidityPct: max(series.map((item) => item.relativeHumidityPct)),
+    minDewPointC: min(series.map((item) => item.dewPointC)),
+    maxDewPointC: max(series.map((item) => item.dewPointC)),
+    minApparentTemperatureC: min(series.map((item) => item.apparentTemperatureC)),
+    maxApparentTemperatureC: max(series.map((item) => item.apparentTemperatureC)),
+    nearSaturation: series.some(isNearSaturation),
   };
+}
+
+export function isNearSaturation(value: ForecastValue): boolean {
+  return value.relativeHumidityPct !== null
+    && value.relativeHumidityPct >= NEAR_SATURATION_HUMIDITY_PCT
+    && value.temperatureC !== null
+    && value.dewPointC !== null
+    && value.temperatureC - value.dewPointC <= NEAR_SATURATION_DEW_POINT_SPREAD_C;
 }
 
 function summarizeDirectionChange(

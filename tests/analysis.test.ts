@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeForecast, circularDifference } from "../src/domain/analysis.js";
+import { analyzeForecast, circularDifference, isNearSaturation } from "../src/domain/analysis.js";
 import type { ControlPoint, ForecastValue, WeatherModel } from "../src/domain/types.js";
 
 const point: ControlPoint = {
@@ -16,6 +16,31 @@ describe("circularDifference", () => {
   it("uses the shortest distance through north", () => {
     expect(circularDifference(359, 1)).toBe(2);
     expect(circularDifference(10, 350)).toBe(20);
+  });
+});
+
+describe("isNearSaturation", () => {
+  const value = series("ecmwf", new Date("2026-07-11T00:00:00Z"), [4], 270)[0]!;
+
+  it("requires both high humidity and a small temperature-to-dew-point spread", () => {
+    expect(isNearSaturation({
+      ...value,
+      relativeHumidityPct: 92,
+      temperatureC: 10,
+      dewPointC: 9,
+    })).toBe(true);
+    expect(isNearSaturation({
+      ...value,
+      relativeHumidityPct: 92,
+      temperatureC: 10,
+      dewPointC: 7,
+    })).toBe(false);
+    expect(isNearSaturation({
+      ...value,
+      relativeHumidityPct: 89,
+      temperatureC: 10,
+      dewPointC: 9,
+    })).toBe(false);
   });
 });
 
@@ -41,6 +66,15 @@ describe("analyzeForecast", () => {
       .toEqual(new Date("2026-07-11T01:00:00Z"));
     expect(summary.pointSummaries[0]?.models.ecmwf?.windChangeAt)
       .toEqual(new Date("2026-07-11T04:00:00Z"));
+    expect(summary.pointSummaries[0]?.models.ecmwf).toMatchObject({
+      minRelativeHumidityPct: 88,
+      maxRelativeHumidityPct: 96,
+      minDewPointC: 9,
+      maxDewPointC: 9,
+      minApparentTemperatureC: 8,
+      maxApparentTemperatureC: 8,
+      nearSaturation: true,
+    });
     expect(summary.agreement.agreed).toBe(false);
     expect(summary.agreement.reasons).toContain("расходятся по силе ветра");
     expect(summary.agreement.reasons).toContain("расходятся по направлению");
@@ -122,5 +156,8 @@ function series(
     visibilityKm: 20,
     pressureHpa: 1000 - index,
     temperatureC: 10,
+    relativeHumidityPct: 88 + index * 2,
+    dewPointC: 9,
+    apparentTemperatureC: 8,
   }));
 }

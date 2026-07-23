@@ -25,6 +25,9 @@ export interface ForecastValue {
   visibilityKm: number | null;
   pressureHpa: number | null;
   temperatureC: number | null;
+  relativeHumidityPct: number | null;
+  dewPointC: number | null;
+  apparentTemperatureC: number | null;
 }
 
 export interface TideExtreme {
@@ -91,6 +94,13 @@ export interface ModelSummary {
   pressureChangeHpa: number | null;
   minTemperatureC: number | null;
   maxTemperatureC: number | null;
+  minRelativeHumidityPct: number | null;
+  maxRelativeHumidityPct: number | null;
+  minDewPointC: number | null;
+  maxDewPointC: number | null;
+  minApparentTemperatureC: number | null;
+  maxApparentTemperatureC: number | null;
+  nearSaturation: boolean;
 }
 
 export interface PointSummary {

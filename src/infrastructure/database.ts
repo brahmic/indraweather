@@ -110,6 +110,25 @@ interface PersonalAnimationJobRow {
   frame_count: number | null;
 }
 
+interface ForecastValueRow {
+  point_id: string;
+  model: "ecmwf" | "gfs";
+  forecast_at: Date;
+  received_at: Date;
+  wind_speed_ms: number | null;
+  wind_gust_ms: number | null;
+  wind_direction_deg: number | null;
+  precipitation_mm: number | null;
+  precipitation_probability_pct: number | null;
+  weather_code: number | null;
+  visibility_km: number | null;
+  pressure_hpa: number | null;
+  temperature_c: number | null;
+  relative_humidity_pct: number | null;
+  dew_point_c: number | null;
+  apparent_temperature_c: number | null;
+}
+
 export class Database {
   private readonly pool: Pool;
 
@@ -205,8 +224,12 @@ export class Database {
             run_id, point_id, model, forecast_at, received_at,
             wind_speed_ms, wind_gust_ms, wind_direction_deg,
             precipitation_mm, precipitation_probability_pct, visibility_km,
-            pressure_hpa, temperature_c, weather_code
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            pressure_hpa, temperature_c, weather_code, relative_humidity_pct,
+            dew_point_c, apparent_temperature_c
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+            $15, $16, $17
+          )
           ON CONFLICT (run_id, point_id, model, forecast_at) DO NOTHING
         `, [
           runId,
@@ -223,6 +246,9 @@ export class Database {
           value.pressureHpa,
           value.temperatureC,
           value.weatherCode,
+          value.relativeHumidityPct,
+          value.dewPointC,
+          value.apparentTemperatureC,
         ]);
       }
       await client.query("COMMIT");
@@ -509,43 +535,16 @@ export class Database {
   }
 
   async getForecastValues(runId: string, pointId: string): Promise<ForecastValue[]> {
-    const result = await this.pool.query<{
-      point_id: string;
-      model: "ecmwf" | "gfs";
-      forecast_at: Date;
-      received_at: Date;
-      wind_speed_ms: number | null;
-      wind_gust_ms: number | null;
-      wind_direction_deg: number | null;
-      precipitation_mm: number | null;
-      precipitation_probability_pct: number | null;
-      weather_code: number | null;
-      visibility_km: number | null;
-      pressure_hpa: number | null;
-      temperature_c: number | null;
-    }>(`
+    const result = await this.pool.query<ForecastValueRow>(`
       SELECT point_id, model, forecast_at, received_at, wind_speed_ms, wind_gust_ms,
              wind_direction_deg, precipitation_mm, precipitation_probability_pct,
-             weather_code, visibility_km, pressure_hpa, temperature_c
+             weather_code, visibility_km, pressure_hpa, temperature_c,
+             relative_humidity_pct, dew_point_c, apparent_temperature_c
       FROM forecast_values
       WHERE run_id = $1 AND point_id = $2
       ORDER BY forecast_at, model
     `, [runId, pointId]);
-    return result.rows.map((row) => ({
-      pointId: row.point_id,
-      model: row.model,
-      forecastAt: row.forecast_at,
-      receivedAt: row.received_at,
-      windSpeedMs: row.wind_speed_ms,
-      windGustMs: row.wind_gust_ms,
-      windDirectionDeg: row.wind_direction_deg,
-      precipitationMm: row.precipitation_mm,
-      precipitationProbabilityPct: row.precipitation_probability_pct,
-      weatherCode: row.weather_code,
-      visibilityKm: row.visibility_km,
-      pressureHpa: row.pressure_hpa,
-      temperatureC: row.temperature_c,
-    }));
+    return result.rows.map(forecastValue);
   }
 
   async getLatestForecastValues(
@@ -555,21 +554,7 @@ export class Database {
     end: Date,
     receivedAfter: Date,
   ): Promise<ForecastValue[]> {
-    const result = await this.pool.query<{
-      point_id: string;
-      model: "ecmwf" | "gfs";
-      forecast_at: Date;
-      received_at: Date;
-      wind_speed_ms: number | null;
-      wind_gust_ms: number | null;
-      wind_direction_deg: number | null;
-      precipitation_mm: number | null;
-      precipitation_probability_pct: number | null;
-      weather_code: number | null;
-      visibility_km: number | null;
-      pressure_hpa: number | null;
-      temperature_c: number | null;
-    }>(`
+    const result = await this.pool.query<ForecastValueRow>(`
       WITH latest_run AS (
         SELECT forecast.run_id
         FROM forecast_values AS forecast
@@ -584,7 +569,8 @@ export class Database {
       )
       SELECT point_id, model, forecast_at, received_at, wind_speed_ms, wind_gust_ms,
              wind_direction_deg, precipitation_mm, precipitation_probability_pct,
-             weather_code, visibility_km, pressure_hpa, temperature_c
+             weather_code, visibility_km, pressure_hpa, temperature_c,
+             relative_humidity_pct, dew_point_c, apparent_temperature_c
       FROM forecast_values
       WHERE run_id = (SELECT run_id FROM latest_run)
         AND point_id = $1
@@ -592,21 +578,7 @@ export class Database {
         AND forecast_at BETWEEN $3 AND $4
       ORDER BY forecast_at
     `, [pointId, model, start, end, receivedAfter]);
-    return result.rows.map((row) => ({
-      pointId: row.point_id,
-      model: row.model,
-      forecastAt: row.forecast_at,
-      receivedAt: row.received_at,
-      windSpeedMs: row.wind_speed_ms,
-      windGustMs: row.wind_gust_ms,
-      windDirectionDeg: row.wind_direction_deg,
-      precipitationMm: row.precipitation_mm,
-      precipitationProbabilityPct: row.precipitation_probability_pct,
-      weatherCode: row.weather_code,
-      visibilityKm: row.visibility_km,
-      pressureHpa: row.pressure_hpa,
-      temperatureC: row.temperature_c,
-    }));
+    return result.rows.map(forecastValue);
   }
 
   async hasForecastCoverage(runId: string, pointId: string, at: Date): Promise<boolean> {
@@ -1386,6 +1358,14 @@ function reviveSummary(raw: unknown): BulletinSummary {
   const summary = raw as BulletinSummary;
   for (const point of summary.pointSummaries) {
     for (const model of Object.values(point.models)) {
+      if (!model) continue;
+      model.minRelativeHumidityPct ??= null;
+      model.maxRelativeHumidityPct ??= null;
+      model.minDewPointC ??= null;
+      model.maxDewPointC ??= null;
+      model.minApparentTemperatureC ??= null;
+      model.maxApparentTemperatureC ??= null;
+      model.nearSaturation ??= false;
       if (model?.directionChangeStartedAt && !(model.directionChangeStartedAt instanceof Date)) {
         model.directionChangeStartedAt = new Date(model.directionChangeStartedAt);
       }
@@ -1401,6 +1381,27 @@ function reviveSummary(raw: unknown): BulletinSummary {
     }
   }
   return summary;
+}
+
+function forecastValue(row: ForecastValueRow): ForecastValue {
+  return {
+    pointId: row.point_id,
+    model: row.model,
+    forecastAt: row.forecast_at,
+    receivedAt: row.received_at,
+    windSpeedMs: row.wind_speed_ms,
+    windGustMs: row.wind_gust_ms,
+    windDirectionDeg: row.wind_direction_deg,
+    precipitationMm: row.precipitation_mm,
+    precipitationProbabilityPct: row.precipitation_probability_pct,
+    weatherCode: row.weather_code,
+    visibilityKm: row.visibility_km,
+    pressureHpa: row.pressure_hpa,
+    temperatureC: row.temperature_c,
+    relativeHumidityPct: row.relative_humidity_pct,
+    dewPointC: row.dew_point_c,
+    apparentTemperatureC: row.apparent_temperature_c,
+  };
 }
 
 function personalAnimationJob(row: PersonalAnimationJobRow | undefined): PersonalAnimationJobRecord | null {

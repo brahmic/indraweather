@@ -127,5 +127,8 @@ function forecast(pointId: string, model: WeatherModel): ForecastValue {
     visibilityKm: 10,
     pressureHpa: 1010,
     temperatureC: 12,
+    relativeHumidityPct: 92,
+    dewPointC: 11,
+    apparentTemperatureC: 10,
   };
 }

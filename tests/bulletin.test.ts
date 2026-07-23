@@ -38,6 +38,13 @@ const summary: BulletinSummary = {
         pressureChangeHpa: -3,
         minTemperatureC: 7,
         maxTemperatureC: 11,
+        minRelativeHumidityPct: 78,
+        maxRelativeHumidityPct: 96,
+        minDewPointC: 6,
+        maxDewPointC: 10,
+        minApparentTemperatureC: 4,
+        maxApparentTemperatureC: 9,
+        nearSaturation: true,
       },
     },
     minWindMs: 3,
@@ -124,6 +131,10 @@ describe("renderBulletin", () => {
     expect(result).toContain("Погодная картина: 🌧️ дождь.");
     expect(result).toContain("Контрольные точки\nДиапазоны: границы ECMWF/GFS, не среднее");
     expect(result).toContain("Ветер: 3–7 м/с · порывы до 10 м/с.");
+    expect(result).toContain(
+      "температура +7…+11 °C · ощущается как +4…+9 °C · влажность 78–96% · точка росы +6…+10 °C.",
+    );
+    expect(result).toContain("В отдельные часы воздух близок к насыщению.");
     expect(result).not.toContain("Поворот ветра:");
     expect(result).toContain("Период 24–48 часов:");
     expect(result).toContain("Источники\nПогода: Open-Meteo");
@@ -179,7 +190,7 @@ describe("renderBulletin", () => {
       timeZone: "Europe/Moscow",
     });
 
-    expect(result).toContain("Точка <1>\nВетер: 3–7 м/с · порывы до 10 м/с.\nДинамика: сравнение неполное.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: нет данных.\nПоворот: сравнение неполное.\nECMWF: З → СЗ с 12:00 до 15:00 МСК.\nGFS: нет данных.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.\nПрилив: данные не удалось получить.");
+    expect(result).toContain("Точка <1>\nВетер: 3–7 м/с · порывы до 10 м/с.\nДинамика: сравнение неполное.\nECMWF: усиление на 4 м/с с 12:00 до 15:00 МСК.\nGFS: нет данных.\nПоворот: сравнение неполное.\nECMWF: З → СЗ с 12:00 до 15:00 МСК.\nGFS: нет данных.\nОсадки 1 мм · видимость от 8 км · температура +7…+11 °C · ощущается как +4…+9 °C · влажность 78–96% · точка росы +6…+10 °C.\nВ отдельные часы воздух близок к насыщению.\nМоре: волна 0,3–0,7 м, с СВ, период 3–5 с; ветровая 0,4 м, зыбь 0,2 м; течение до 0,3 уз на В; вода +8 °C.\nПрилив: данные не удалось получить.");
     expect(result).not.toContain("\nВолна и вода\n");
     expect(result).toContain("Выпуск\nИзменение: нет предыдущего планового выпуска для сравнения.\nПрогноз морской модели: в губах, за островами и у берега условия могут отличаться.");
   });

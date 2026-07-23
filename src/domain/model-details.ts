@@ -44,7 +44,14 @@ function renderModel(model: ModelSummary, timeZone: string): string {
       : `видимость от ${formatNumber(model.minVisibilityKm)} км`,
     `давление ${formatPressure(model.pressureChangeHpa)}`,
     `температура ${formatTemperature(model)}`,
+    `ощущается как ${formatSignedRange(
+      model.minApparentTemperatureC,
+      model.maxApparentTemperatureC,
+    )}`,
+    `влажность ${formatHumidity(model)}`,
+    `точка росы ${formatSignedRange(model.minDewPointC, model.maxDewPointC)}`,
   ];
+  if (model.nearSaturation) parts.push("в отдельные часы воздух близок к насыщению");
   if (model.windChangeAt && model.windChangeMs !== 0) {
     const action = model.windChangeMs > 0 ? "усиление" : "ослабление";
     const timing = model.windChangeStartedAt
@@ -100,8 +107,17 @@ function formatPressure(value: number | null): string {
 }
 
 function formatTemperature(model: ModelSummary): string {
-  if (model.minTemperatureC === null || model.maxTemperatureC === null) return "—";
-  return `${formatSigned(model.minTemperatureC)}…${formatSigned(model.maxTemperatureC)} °C`;
+  return formatSignedRange(model.minTemperatureC, model.maxTemperatureC);
+}
+
+function formatSignedRange(minimum: number | null, maximum: number | null): string {
+  if (minimum === null || maximum === null) return "—";
+  return `${formatSigned(minimum)}…${formatSigned(maximum)} °C`;
+}
+
+function formatHumidity(model: ModelSummary): string {
+  if (model.minRelativeHumidityPct === null || model.maxRelativeHumidityPct === null) return "—";
+  return `${formatNumber(model.minRelativeHumidityPct)}–${formatNumber(model.maxRelativeHumidityPct)}%`;
 }
 
 function formatDateTime(date: Date, timeZone: string): string {

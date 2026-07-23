@@ -97,6 +97,25 @@ export function renderBulletin(input: BulletinInput): string {
     if (temperatures.length > 0) {
       extras.push(`температура ${formatSigned(Math.min(...temperatures))}…${formatSigned(Math.max(...temperatures))} °C`);
     }
+    const apparentTemperatures = Object.values(point.models).flatMap((model) =>
+      model ? [model.minApparentTemperatureC, model.maxApparentTemperatureC] : [],
+    ).filter((value): value is number => value !== null);
+    if (apparentTemperatures.length > 0) {
+      extras.push(`ощущается как ${formatSigned(Math.min(...apparentTemperatures))}…${formatSigned(Math.max(...apparentTemperatures))} °C`);
+    }
+    const humidities = Object.values(point.models).flatMap((model) =>
+      model ? [model.minRelativeHumidityPct, model.maxRelativeHumidityPct] : [],
+    ).filter((value): value is number => value !== null);
+    if (humidities.length > 0) {
+      extras.push(`влажность ${formatNumber(Math.min(...humidities))}–${formatNumber(Math.max(...humidities))}%`);
+    }
+    const dewPoints = Object.values(point.models).flatMap((model) =>
+      model ? [model.minDewPointC, model.maxDewPointC] : [],
+    ).filter((value): value is number => value !== null);
+    if (dewPoints.length > 0) {
+      extras.push(`точка росы ${formatSigned(Math.min(...dewPoints))}…${formatSigned(Math.max(...dewPoints))} °C`);
+    }
+    const nearSaturation = Object.values(point.models).some((model) => model?.nearSaturation);
     lines.push(
       "",
       point.point.name,
@@ -108,6 +127,7 @@ export function renderBulletin(input: BulletinInput): string {
     if (turn) lines.push(`Поворот: ${turn.summary}.`, ...turn.details.map((detail) => `${detail}.`));
     if (wind.directionUnavailable) lines.push("Направление: модели расходятся.");
     if (extras.length > 0) lines.push(`${capitalize(extras.join(" · "))}.`);
+    if (nearSaturation) lines.push("В отдельные часы воздух близок к насыщению.");
     const marine = marineByPointId.get(point.point.id);
     lines.push(marine ? `Море: ${renderMarine(marine)}.` : "Море: нет данных.");
     const tide = renderTide(tidesByPointId.get(point.point.id) ?? [], generatedAt, input.timeZone);

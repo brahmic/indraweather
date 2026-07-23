@@ -7,6 +7,9 @@ const responseSchema = z.object({
   hourly: z.object({
     time: z.array(z.string()),
     temperature_2m: nullableNumbers,
+    relative_humidity_2m: nullableNumbers,
+    dew_point_2m: nullableNumbers,
+    apparent_temperature: nullableNumbers,
     precipitation: nullableNumbers,
     precipitation_probability: nullableNumbers.optional(),
     weather_code: nullableNumbers,
@@ -67,6 +70,9 @@ function forecastUrl(model: WeatherModel, points: ControlPoint[], horizonHours: 
   url.searchParams.set("longitude", points.map((point) => point.longitude).join(","));
   const variables = [
     "temperature_2m",
+    "relative_humidity_2m",
+    "dew_point_2m",
+    "apparent_temperature",
     "precipitation",
     "weather_code",
     "visibility",
@@ -115,6 +121,9 @@ function parseForecast(
       visibilityKm: divide(at(hourly.visibility, index), 1000),
       pressureHpa: at(hourly.pressure_msl, index),
       temperatureC: at(hourly.temperature_2m, index),
+      relativeHumidityPct: at(hourly.relative_humidity_2m, index),
+      dewPointC: at(hourly.dew_point_2m, index),
+      apparentTemperatureC: at(hourly.apparent_temperature, index),
     }];
   });
 }

@@ -36,6 +36,10 @@ describe("renderPointForecast", () => {
     expect(text).toContain("День: Понедельник, 13 июля · 🌧️");
     expect(text).toContain("ECMWF: ветер 4–8 м/с");
     expect(text).toContain("GFS: ветер 5–10 м/с");
+    expect(text).toContain("влажность 75–95%");
+    expect(text).toContain("точка росы +7…+7 °C");
+    expect(text).toContain("ощущается как +6…+6 °C");
+    expect(text).toContain("в отдельные часы воздух близок к насыщению");
     expect(text).toContain("Расхождение: максимальный ветер 2 м/с.");
     expect(text).toContain("Море: волна до 0,8 м; период 4 с; течение до 0,3 уз, СВ; вода +8…+8 °C.");
   });
@@ -66,6 +70,9 @@ function forecast(model: "ecmwf" | "gfs", day: number, hour: number, wind: numbe
     visibilityKm: 8,
     pressureHpa: 1000,
     temperatureC: 8,
+    relativeHumidityPct: hour === 18 ? 95 : 75,
+    dewPointC: 7,
+    apparentTemperatureC: 6,
   };
 }
 
